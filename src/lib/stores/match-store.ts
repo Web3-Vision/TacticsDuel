@@ -19,6 +19,7 @@ interface MatchState {
   awayTeam: string;
 
   loadMatch: (result: MatchResult, homeTeam: string, awayTeam: string) => void;
+  loadReplay: (events: MatchEvent[], stats: MatchStats | null, homeTeam: string, awayTeam: string) => void;
   tick: () => void;
   setSpeed: (speed: 1 | 2 | 3) => void;
   toggleKeyOnly: () => void;
@@ -55,6 +56,24 @@ export const useMatchStore = create<MatchState>((set, get) => ({
       stats: result.stats,
       playerRatings: result.playerRatings,
       manOfTheMatch: result.manOfTheMatch,
+      isFinished: false,
+      homeTeam,
+      awayTeam,
+    });
+  },
+
+  loadReplay: (events, stats, homeTeam, awayTeam) => {
+    set({
+      events,
+      visibleEvents: [],
+      currentIndex: 0,
+      isPlaying: true,
+      homeScore: 0,
+      awayScore: 0,
+      currentMinute: 0,
+      stats,
+      playerRatings: {},
+      manOfTheMatch: "",
       isFinished: false,
       homeTeam,
       awayTeam,
