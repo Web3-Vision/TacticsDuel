@@ -1,0 +1,153 @@
+"use client";
+
+import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+export default function SignupPage() {
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [clubName, setClubName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const supabase = createClient();
+  const router = useRouter();
+
+  async function handleSignup(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    if (username.length < 3 || username.length > 20) {
+      setError("Username must be 3-20 characters");
+      setLoading(false);
+      return;
+    }
+
+    if (clubName.length < 2 || clubName.length > 30) {
+      setError("Club name must be 2-30 characters");
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          username,
+          club_name: clubName,
+        },
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setSent(true);
+    }
+    setLoading(false);
+  }
+
+  async function handleGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?signup=true`,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+    if (error) setError(error.message);
+  }
+
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-center px-4 bg-bg">
+      <div className="w-full max-w-[340px]">
+        <h1 className="font-mono text-xl font-semibold tracking-wider uppercase text-center mb-1">
+          Create Your Club
+        </h1>
+        <p className="text-text-dim text-sm text-center mb-8">
+          Pick a name and start competing
+        </p>
+
+        {sent ? (
+          <div className="bg-surface border border-border rounded-md p-4">
+            <p className="font-mono text-sm text-accent">Check your email</p>
+            <p className="text-text-mid text-xs mt-2">
+              We sent a signup link to {email}
+            </p>
+          </div>
+        ) : (
+          <>
+            <form onSubmit={handleSignup} className="flex flex-col gap-3">
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                required
+                maxLength={20}
+                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+              />
+              <input
+                type="text"
+                value={clubName}
+                onChange={(e) => setClubName(e.target.value)}
+                placeholder="Club name (e.g. FC Thunder)"
+                required
+                maxLength={30}
+                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+              />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email address"
+                required
+                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-[44px] bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
+              >
+                {loading ? "Creating..." : "Create Club"}
+              </button>
+            </form>
+
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-text-dim text-xs font-mono uppercase">
+                or
+              </span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <button
+              onClick={handleGoogle}
+              className="w-full h-[44px] bg-surface border border-border rounded-[4px] font-mono text-sm uppercase tracking-wide text-text hover:border-border-light transition-colors duration-100"
+            >
+              Sign up with Google
+            </button>
+          </>
+        )}
+
+        {error && (
+          <p className="text-danger text-xs font-mono mt-3">{error}</p>
+        )}
+
+        <p className="text-text-dim text-xs text-center mt-6">
+          Already have a club?{" "}
+          <Link href="/login" className="text-accent hover:underline">
+            Log in
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
