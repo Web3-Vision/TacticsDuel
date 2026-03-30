@@ -59,22 +59,16 @@ export default function SignupPage() {
         return;
       }
 
-      // Establish Supabase session via the verification link
-      if (data.verificationUrl) {
-        const url = new URL(data.verificationUrl);
-        const token_hash = url.searchParams.get("token") || data.hashedToken;
-        const type = url.searchParams.get("type") || "magiclink";
+      // Sign in to Supabase with the temp password (no emails, no rate limits)
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.tempPassword,
+      });
 
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: token_hash!,
-          type: type as "magiclink",
-        });
-
-        if (verifyError) {
-          setError(verifyError.message);
-          setLoading(false);
-          return;
-        }
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
       }
 
       router.push("/dashboard");
@@ -82,20 +76,6 @@ export default function SignupPage() {
       setError(err instanceof Error ? err.message : "Signup failed");
       setLoading(false);
     }
-  }
-
-  async function handleGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?signup=true`,
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
-      },
-    });
-    if (error) setError(error.message);
   }
 
   return (
@@ -143,21 +123,6 @@ export default function SignupPage() {
             {loading ? "Creating..." : "Create Club"}
           </button>
         </form>
-
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-text-dim text-xs font-mono uppercase">
-            or
-          </span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
-        <button
-          onClick={handleGoogle}
-          className="w-full h-[44px] bg-surface border border-border rounded-[4px] font-mono text-sm uppercase tracking-wide text-text hover:border-border-light transition-colors duration-100"
-        >
-          Sign up with Google
-        </button>
 
         {error && (
           <p className="text-danger text-xs font-mono mt-3">{error}</p>

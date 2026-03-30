@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMagicAdmin } from "@/lib/magic/server";
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,9 +34,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists in Supabase
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(
+    // Generate a temp password for Supabase session (never shown to user)
+    const tempPassword = `magic_${randomUUID()}_${Date.now()}`;
+
+    // Find user by email
+    const { data: existingUserData } =
+      await supabaseAdmin.auth.admin.listUsers();
+    const existingUser = existingUserData?.users?.find(
       (u) => u.email === email
     );
 
@@ -43,6 +48,11 @@ export async function POST(request: NextRequest) {
 
     if (existingUser) {
       userId = existingUser.id;
+
+      // Set temp password for session creation (no email sent)
+      await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: tempPassword,
+      });
 
       // Update wallet address on profile if not set
       if (walletAddress) {
@@ -53,10 +63,11 @@ export async function POST(request: NextRequest) {
           .is("wallet_address", null);
       }
     } else {
-      // Create new Supabase user
+      // Create new Supabase user with temp password (no email sent)
       const { data: newUser, error: createError } =
         await supabaseAdmin.auth.admin.createUser({
           email,
+          password: tempPassword,
           email_confirm: true,
           user_metadata: {
             username: username || `Manager_${email.split("@")[0].slice(0, 6)}`,
@@ -76,7 +87,6 @@ export async function POST(request: NextRequest) {
 
       // Update wallet address on profile (trigger creates the profile)
       if (walletAddress) {
-        // Small delay to let the trigger fire
         await new Promise((r) => setTimeout(r, 500));
         await supabaseAdmin
           .from("profiles")
@@ -85,33 +95,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate a magic link for the user to create a Supabase session
-    const { data: linkData, error: linkError } =
-      await supabaseAdmin.auth.admin.generateLink({
-        type: "magiclink",
-        email,
-        options: {
-          redirectTo: `${request.nextUrl.origin}/auth/callback`,
-        },
-      });
-
-    if (linkError || !linkData) {
-      return NextResponse.json(
-        { error: linkError?.message || "Failed to generate session link" },
-        { status: 500 }
-      );
-    }
-
-    // Extract the token from the link and return it
-    // The link contains a token_hash we can use
-    const hashed_token = linkData.properties?.hashed_token;
-    const verification_url = linkData.properties?.action_link;
-
+    // Return email + temp password so client can signInWithPassword
+    // This bypasses ALL Supabase email rate limits
     return NextResponse.json({
+      email,
+      tempPassword,
       userId,
       walletAddress,
-      verificationUrl: verification_url,
-      hashedToken: hashed_token,
     });
   } catch (error) {
     console.error("Magic auth error:", error);
