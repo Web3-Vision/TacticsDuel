@@ -168,5 +168,10 @@ export interface Profile {
   losses: number;
   current_streak: number;
   best_streak: number;
+  favorite_team?: string;
+  age?: number;
+  captain_player_id?: string;
+  onboarding_completed: boolean;
+  wallet_address?: string;
   created_at: string;
 }

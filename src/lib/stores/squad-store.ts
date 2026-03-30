@@ -8,12 +8,14 @@ interface SquadState {
   formationId: string;
   slots: (Player | null)[];
   activeSlotIndex: number | null;
+  captainId: string | null;
 
   setFormation: (id: string) => void;
   setActiveSlot: (index: number | null) => void;
   addPlayer: (slotIndex: number, player: Player) => void;
   removePlayer: (slotIndex: number) => void;
   clearSquad: () => void;
+  setCaptain: (playerId: string | null) => void;
   loadSquad: (formationId: string, slots: (Player | null)[]) => void;
   saveToSupabase: () => Promise<void>;
   loadFromSupabase: () => Promise<void>;
@@ -33,9 +35,10 @@ export const useSquadStore = create<SquadState>((set, get) => ({
   formationId: "4-3-3",
   slots: Array(11).fill(null),
   activeSlotIndex: null,
+  captainId: null,
 
   setFormation: (id) => {
-    set({ formationId: id, slots: Array(11).fill(null), activeSlotIndex: null });
+    set({ formationId: id, slots: Array(11).fill(null), activeSlotIndex: null, captainId: null });
   },
 
   setActiveSlot: (index) => set({ activeSlotIndex: index }),
@@ -56,7 +59,9 @@ export const useSquadStore = create<SquadState>((set, get) => ({
     set({ slots: newSlots });
   },
 
-  clearSquad: () => set({ slots: Array(11).fill(null), activeSlotIndex: null }),
+  clearSquad: () => set({ slots: Array(11).fill(null), activeSlotIndex: null, captainId: null }),
+
+  setCaptain: (playerId) => set({ captainId: playerId }),
 
   loadSquad: (formationId, slots) => set({ formationId, slots }),
 
@@ -73,6 +78,7 @@ export const useSquadStore = create<SquadState>((set, get) => ({
       user_id: user.id,
       formation: state.formationId,
       player_ids: playerIds,
+      captain_id: state.captainId,
       total_cost: state.totalSpent(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -86,7 +92,7 @@ export const useSquadStore = create<SquadState>((set, get) => ({
 
     const { data } = await supabase
       .from("squads")
-      .select("formation, player_ids")
+      .select("formation, player_ids, captain_id")
       .eq("user_id", user.id)
       .single();
 
@@ -94,7 +100,7 @@ export const useSquadStore = create<SquadState>((set, get) => ({
 
     const playerIds = data.player_ids as (string | null)[];
     const slots = playerIds.map((id) => (id ? getPlayerById(id) ?? null : null));
-    set({ formationId: data.formation, slots });
+    set({ formationId: data.formation, slots, captainId: data.captain_id ?? null });
   },
 
   totalSpent: () => {

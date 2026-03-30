@@ -11,11 +11,11 @@ export default function BudgetBar() {
 
   const pct = (totalSpent / SALARY_CAP) * 100;
   const color =
-    remaining > 80
+    remaining > SALARY_CAP * 0.4
       ? "bg-accent"
-      : remaining > 30
+      : remaining > SALARY_CAP * 0.15
         ? "bg-gold"
-        : remaining > 10
+        : remaining > SALARY_CAP * 0.05
           ? "bg-gold"
           : "bg-danger";
 

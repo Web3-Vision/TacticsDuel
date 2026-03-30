@@ -95,17 +95,32 @@ export default function SquadPage() {
     if (!loaded) return;
     const sortedPlayers = [...players].sort((a, b) => b.overall - a.overall);
 
-    formation.slots.forEach((slot, i) => {
-      if (slots[i] !== null) return;
-      const remaining = useSquadStore.getState().budgetRemaining();
+    // Get empty slot indices sorted by position priority: GK → DEF → MID → FWD
+    const positionPriority: Record<string, number> = {
+      GK: 0, CB: 1, LB: 1, RB: 1, CM: 2, LW: 3, RW: 3, ST: 3,
+    };
+    const emptySlots = formation.slots
+      .map((slot, i) => ({ slot, i }))
+      .filter(({ i }) => slots[i] === null)
+      .sort((a, b) => (positionPriority[a.slot.position] ?? 2) - (positionPriority[b.slot.position] ?? 2));
+
+    let remainingSlots = emptySlots.length;
+
+    emptySlots.forEach(({ slot, i }) => {
+      const state = useSquadStore.getState();
+      const remaining = state.budgetRemaining();
+      const targetPerSlot = remaining / remainingSlots;
+      const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
+
       const available = sortedPlayers.find(
         (p) =>
           p.position === slot.position &&
-          !useSquadStore.getState().isPlayerInSquad(p.id) &&
-          p.marketValue <= remaining
+          !state.isPlayerInSquad(p.id) &&
+          p.marketValue <= maxSpend
       );
       if (available) {
-        useSquadStore.getState().addPlayer(i, available);
+        state.addPlayer(i, available);
+        remainingSlots--;
       }
     });
   }

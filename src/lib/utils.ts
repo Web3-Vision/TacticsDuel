@@ -43,7 +43,7 @@ export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
 }
 
-export const SALARY_CAP = 200;
+export const SALARY_CAP = 2000;
 
 export const DIVISIONS: {
   id: number;
