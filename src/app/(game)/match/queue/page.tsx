@@ -2,34 +2,43 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { useMatchStore } from "@/lib/stores/match-store";
+import { Loader2, Swords, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type QueueState = "idle" | "joining" | "searching" | "found" | "simulating" | "error";
 
 export default function QueuePage() {
   const router = useRouter();
-  const [inQueue, setInQueue] = useState(false);
+  const loadMatch = useMatchStore((s) => s.loadMatch);
+  const [state, setState] = useState<QueueState>("idle");
   const [waitTime, setWaitTime] = useState(0);
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function joinQueue() {
     setError("");
+    setState("joining");
     try {
       const res = await fetch("/api/match/queue", { method: "POST" });
       const data = await res.json();
 
-      if (data.matchFound) {
-        router.push(`/match/${data.matchId}`);
+      if (data.matchFound && data.matchId) {
+        setState("found");
+        await simulateAndView(data.matchId);
         return;
       }
 
       if (data.queued) {
-        setInQueue(true);
+        setState("searching");
         startPolling();
       } else {
         setError(data.error || "Failed to join queue");
+        setState("error");
       }
     } catch {
       setError("Network error");
+      setState("error");
     }
   }
 
@@ -39,9 +48,10 @@ export default function QueuePage() {
         const res = await fetch("/api/match/queue");
         const data = await res.json();
 
-        if (data.matchFound) {
+        if (data.matchFound && data.matchId) {
           clearInterval(pollRef.current!);
-          router.push(`/match/${data.matchId}`);
+          setState("found");
+          await simulateAndView(data.matchId);
           return;
         }
 
@@ -49,18 +59,67 @@ export default function QueuePage() {
 
         if (!data.inQueue) {
           clearInterval(pollRef.current!);
-          setInQueue(false);
+          setState("idle");
         }
       } catch {
         // Retry on next interval
       }
-    }, 5000);
+    }, 4000);
+  }
+
+  async function simulateAndView(matchId: string) {
+    setState("simulating");
+    try {
+      const res = await fetch("/api/match/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || "Simulation failed");
+        setState("error");
+        return;
+      }
+
+      // Load match result into store
+      loadMatch(
+        {
+          events: data.result.events,
+          homeScore: data.result.homeScore,
+          awayScore: data.result.awayScore,
+          stats: data.result.stats,
+          playerRatings: data.result.playerRatings ?? {},
+          manOfTheMatch: data.result.manOfTheMatch ?? "",
+        },
+        "Your Team",
+        "Opponent"
+      );
+
+      // Store match metadata for post-match display
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("lastRankedMatch", JSON.stringify({
+          matchId,
+          matchType: "ranked",
+          homeEloChange: data.result.homeEloChange,
+          awayEloChange: data.result.awayEloChange,
+          homeDivPointsChange: data.result.homeDivPointsChange,
+          awayDivPointsChange: data.result.awayDivPointsChange,
+        }));
+      }
+
+      router.push("/match/live");
+    } catch {
+      setError("Failed to simulate match");
+      setState("error");
+    }
   }
 
   async function leaveQueue() {
     if (pollRef.current) clearInterval(pollRef.current);
     await fetch("/api/match/queue", { method: "DELETE" });
-    setInQueue(false);
+    setState("idle");
     setWaitTime(0);
   }
 
@@ -72,30 +131,9 @@ export default function QueuePage() {
 
   return (
     <div className="p-4 flex flex-col items-center justify-center min-h-[60vh] gap-6">
-      {inQueue ? (
+      {state === "idle" && (
         <>
-          <Loader2
-            size={32}
-            strokeWidth={1.5}
-            className="text-accent animate-spin"
-          />
-          <div className="text-center">
-            <p className="font-mono text-lg uppercase tracking-wide">
-              Searching for opponent
-            </p>
-            <p className="font-mono text-xs text-text-dim mt-2 tabular-nums">
-              {waitTime}s elapsed
-            </p>
-          </div>
-          <button
-            onClick={leaveQueue}
-            className="h-10 px-6 border border-border text-text-dim font-mono text-sm uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
-          >
-            Cancel
-          </button>
-        </>
-      ) : (
-        <>
+          <Swords size={32} strokeWidth={1.5} className="text-accent" />
           <p className="font-mono text-lg uppercase tracking-wide">
             Ranked Match
           </p>
@@ -105,9 +143,74 @@ export default function QueuePage() {
           >
             Find Match
           </button>
-          {error && (
-            <p className="text-danger text-xs font-mono">{error}</p>
-          )}
+        </>
+      )}
+
+      {state === "joining" && (
+        <>
+          <Loader2 size={32} strokeWidth={1.5} className="text-accent animate-spin" />
+          <p className="font-mono text-sm text-text-dim uppercase tracking-wide">
+            Joining queue...
+          </p>
+        </>
+      )}
+
+      {state === "searching" && (
+        <>
+          <Loader2 size={32} strokeWidth={1.5} className="text-accent animate-spin" />
+          <div className="text-center">
+            <p className="font-mono text-lg uppercase tracking-wide">
+              Searching for opponent
+            </p>
+            <p className="font-mono text-xs text-text-dim mt-2 tabular-nums">
+              {waitTime}s elapsed
+            </p>
+            {waitTime >= 20 && (
+              <p className="font-mono text-[10px] text-text-dim mt-1">
+                Expanding search range...
+              </p>
+            )}
+          </div>
+          <button
+            onClick={leaveQueue}
+            className="h-10 px-6 border border-border text-text-dim font-mono text-sm uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
+          >
+            Cancel
+          </button>
+        </>
+      )}
+
+      {state === "found" && (
+        <>
+          <Swords size={32} strokeWidth={1.5} className="text-accent" />
+          <p className="font-mono text-lg uppercase tracking-wide text-accent">
+            Opponent Found!
+          </p>
+          <p className="font-mono text-xs text-text-dim">
+            Preparing match...
+          </p>
+        </>
+      )}
+
+      {state === "simulating" && (
+        <>
+          <Loader2 size={32} strokeWidth={1.5} className="text-accent animate-spin" />
+          <p className="font-mono text-sm text-text-dim uppercase tracking-wide">
+            Simulating match...
+          </p>
+        </>
+      )}
+
+      {state === "error" && (
+        <>
+          <AlertCircle size={32} strokeWidth={1.5} className="text-danger" />
+          <p className="text-danger text-xs font-mono text-center">{error}</p>
+          <button
+            onClick={() => { setState("idle"); setError(""); }}
+            className="h-10 px-6 border border-border text-text-mid font-mono text-sm uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
+          >
+            Try Again
+          </button>
         </>
       )}
     </div>

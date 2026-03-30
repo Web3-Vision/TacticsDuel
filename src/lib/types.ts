@@ -140,6 +140,28 @@ export interface MatchResult {
 export type MatchType = 'ranked' | 'friendly' | 'draft' | 'ai';
 export type MatchStatus = 'pending' | 'accepted' | 'simulating' | 'completed' | 'cancelled';
 
+// Phase result for interactive match simulation
+export interface PhaseResult {
+  events: MatchEvent[];
+  homeScore: number;
+  awayScore: number;
+  homePossCount: number;
+  awayPossCount: number;
+  homeShots: number;
+  awayShots: number;
+  homeOnTarget: number;
+  awayOnTarget: number;
+  homeCorners: number;
+  awayCorners: number;
+  homeFouls: number;
+  awayFouls: number;
+  homeYellows: number;
+  awayYellows: number;
+  homeReds: number;
+  awayReds: number;
+  playerEvents: Record<string, { positive: number; negative: number; involved: number }>;
+}
+
 // ============================================
 // DIVISION TYPES
 // ============================================
@@ -169,4 +191,16 @@ export interface Profile {
   current_streak: number;
   best_streak: number;
   created_at: string;
+  // Ranked cycle
+  squad_locked: boolean;
+  ranked_matches_in_cycle: number;
+  transfers_remaining: number;
+  squad_confirmed_at: string | null;
+  cycle_id: number;
+  // Division season
+  division_wins: number;
+  division_draws: number;
+  division_losses: number;
+  division_season: number;
+  division_matches_played: number;
 }

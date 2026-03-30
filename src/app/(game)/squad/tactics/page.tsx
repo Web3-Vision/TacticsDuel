@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
-import { FORMATIONS, getFormation } from "@/lib/data/formations";
+import { FORMATIONS } from "@/lib/data/formations";
 import PitchView from "@/components/pitch/PitchView";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import type { Mentality, Tempo, Pressing, Width } from "@/lib/types";
 
 const MENTALITIES: { value: Mentality; label: string }[] = [
@@ -81,11 +82,73 @@ export default function TacticsPage() {
   const [htWinningMentality, setHtWinningMentality] =
     useState<Mentality>("Defensive");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  function handleSave() {
-    // TODO: save to Supabase
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // Load saved tactics from Supabase on mount
+  useEffect(() => {
+    async function loadTactics() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("tactics")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (data) {
+        if (data.formation) setFormation(data.formation);
+        if (data.mentality) setMentality(data.mentality as Mentality);
+        if (data.tempo) setTempo(data.tempo as Tempo);
+        if (data.pressing) setPressing(data.pressing as Pressing);
+        if (data.width) setWidth(data.width as Width);
+        if (data.ht_if_losing_mentality) setHtLosingMentality(data.ht_if_losing_mentality as Mentality);
+        if (data.ht_if_winning_mentality) setHtWinningMentality(data.ht_if_winning_mentality as Mentality);
+      }
+      setLoaded(true);
+    }
+    loadTactics();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSave() {
+    setSaving(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSaving(false); return; }
+
+    const tacticsData = {
+      user_id: user.id,
+      formation: formationId,
+      mentality,
+      tempo,
+      pressing,
+      width,
+      ht_if_losing_mentality: htLosingMentality,
+      ht_if_winning_mentality: htWinningMentality,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Upsert: insert or update
+    const { error } = await supabase
+      .from("tactics")
+      .upsert(tacticsData, { onConflict: "user_id" });
+
+    setSaving(false);
+    if (!error) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  }
+
+  if (!loaded) {
+    return (
+      <div className="p-4">
+        <div className="h-3 bg-border rounded-sm w-32 mb-2 animate-pulse" />
+        <div className="h-3 bg-border rounded-sm w-48 mb-2 animate-pulse" />
+      </div>
+    );
   }
 
   return (
@@ -163,14 +226,16 @@ export default function TacticsPage() {
       <div className="fixed bottom-14 left-0 right-0 bg-surface border-t border-border p-4 max-w-[480px] mx-auto">
         <button
           onClick={handleSave}
+          disabled={saving}
           className={cn(
             "w-full h-[44px] font-mono text-sm uppercase tracking-wide rounded-[4px] transition-colors duration-100",
             saved
               ? "bg-accent/20 text-accent border border-accent"
-              : "bg-accent text-black hover:bg-accent-dim"
+              : "bg-accent text-black hover:bg-accent-dim",
+            saving && "opacity-60"
           )}
         >
-          {saved ? "Saved" : "Save Tactics"}
+          {saving ? "Saving..." : saved ? "Saved" : "Save Tactics"}
         </button>
       </div>
     </div>
