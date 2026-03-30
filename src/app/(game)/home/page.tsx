@@ -115,17 +115,6 @@ export default async function HomePage() {
         </div>
       </div>
 
-      {/* Team strength */}
-      {profile && (
-        <div className="bg-surface border border-border rounded-md p-3 flex items-center justify-between">
-          <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
-            Team Strength
-          </span>
-          <span className="font-mono text-md text-accent tabular-nums">
-            --
-          </span>
-        </div>
-      )}
     </div>
   );
 }

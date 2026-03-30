@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { getFormation } from "@/lib/data/formations";
+import { calculateTeamRatings } from "@/lib/engine/team-strength";
 
 export default function SquadPreview() {
   const { formationId, slots, filledCount } = useSquadStore();
   const formation = getFormation(formationId);
   const filled = filledCount();
+
+  const starters = slots.filter((p): p is NonNullable<typeof p> => p !== null);
+  const teamRatings = starters.length > 0 ? calculateTeamRatings(starters) : null;
 
   return (
     <Link
@@ -18,9 +22,16 @@ export default function SquadPreview() {
         <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
           Your Squad
         </span>
-        <span className="font-mono text-[11px] text-text-mid">
-          {formation.name} -- {filled}/11
-        </span>
+        <div className="flex items-center gap-3">
+          {teamRatings && (
+            <span className="font-mono text-xs text-accent tabular-nums">
+              STR {Math.round(teamRatings.overall)}
+            </span>
+          )}
+          <span className="font-mono text-[11px] text-text-mid">
+            {formation.name} — {filled}/11
+          </span>
+        </div>
       </div>
 
       {/* Mini pitch */}
@@ -34,10 +45,16 @@ export default function SquadPreview() {
         {/* Player dots */}
         {formation.slots.map((slot, i) => {
           const player = slots[i];
+          const shortName = player
+            ? player.name.length > 6
+              ? player.name.slice(0, 6)
+              : player.name
+            : null;
+
           return (
             <div
               key={i}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
               style={{ left: `${slot.x}%`, top: `${100 - slot.y}%` }}
             >
               <div
@@ -49,6 +66,11 @@ export default function SquadPreview() {
               >
                 {player ? player.overall : slot.label.slice(0, 2)}
               </div>
+              {shortName && (
+                <span className="font-mono text-[6px] text-white/70 mt-0.5 leading-none whitespace-nowrap">
+                  {shortName}
+                </span>
+              )}
             </div>
           );
         })}

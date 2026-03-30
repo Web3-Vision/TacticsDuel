@@ -4,126 +4,81 @@ import { useState, useEffect } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { getFormation } from "@/lib/data/formations";
 import { FORMATIONS } from "@/lib/data/formations";
-import { cn, SALARY_CAP, formatPrice } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 import PitchView from "@/components/pitch/PitchView";
-import PositionGuide from "@/components/squad/PositionGuide";
 import BudgetBar from "@/components/squad/BudgetBar";
-import PlayerMarket from "@/components/squad/PlayerMarket";
 import PlayerDetail from "@/components/squad/PlayerDetail";
-import type { Player, Position } from "@/lib/types";
-
-// Lazy import players to avoid blocking initial render
-let PLAYERS: Player[] = [];
+import Link from "next/link";
+import type { Player } from "@/lib/types";
 
 export default function SquadPage() {
   const {
     formationId,
     setFormation,
     slots,
+    bench,
     activeSlotIndex,
     setActiveSlot,
-    addPlayer,
     removePlayer,
+    removeBenchPlayer,
     clearSquad,
     filledCount,
+    benchFilledCount,
     totalSpent,
-    budgetRemaining,
-    positionForSlot,
     isPlayerInSquad,
-    canAfford,
   } = useSquadStore();
 
-  const [players, setPlayers] = useState<Player[]>([]);
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
+  const [detailSource, setDetailSource] = useState<"starter" | "bench" | null>(null);
+  const [detailIndex, setDetailIndex] = useState<number>(-1);
   const [showDetail, setShowDetail] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    import("@/lib/data/players").then((mod) => {
-      setPlayers(mod.PLAYERS);
-      PLAYERS = mod.PLAYERS;
-      setLoaded(true);
-    });
-  }, []);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
 
   const formation = getFormation(formationId);
 
-  // Filter position based on active slot
-  const filterPos =
-    activeSlotIndex !== null
-      ? formation.slots[activeSlotIndex]?.position ?? null
-      : null;
-
-  function handleSelectPlayer(player: Player) {
+  function handleStarterTap(player: Player, index: number) {
     setDetailPlayer(player);
+    setDetailSource("starter");
+    setDetailIndex(index);
     setShowDetail(true);
   }
 
-  function handleAddPlayer() {
-    if (!detailPlayer) return;
+  function handleBenchTap(player: Player, index: number) {
+    setDetailPlayer(player);
+    setDetailSource("bench");
+    setDetailIndex(index);
+    setShowDetail(true);
+  }
 
-    if (activeSlotIndex !== null) {
-      addPlayer(activeSlotIndex, detailPlayer);
-    } else {
-      // Find first empty slot matching this player's position
-      const emptySlotIdx = formation.slots.findIndex(
-        (s, i) => s.position === detailPlayer.position && slots[i] === null
-      );
-      if (emptySlotIdx !== -1) {
-        addPlayer(emptySlotIdx, detailPlayer);
-      } else {
-        // Find any empty slot
-        const anyEmpty = slots.findIndex((s) => s === null);
-        if (anyEmpty !== -1) {
-          addPlayer(anyEmpty, detailPlayer);
-        }
-      }
+  function handleRemove() {
+    if (!detailPlayer) return;
+    if (detailSource === "starter") {
+      removePlayer(detailIndex);
+    } else if (detailSource === "bench") {
+      removeBenchPlayer(detailIndex);
     }
     setShowDetail(false);
     setDetailPlayer(null);
   }
 
-  function handleRemovePlayer() {
-    if (!detailPlayer) return;
-    const idx = slots.findIndex((p) => p?.id === detailPlayer.id);
-    if (idx !== -1) removePlayer(idx);
-    setShowDetail(false);
-    setDetailPlayer(null);
+  async function handleSave() {
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      await useSquadStore.getState().saveToSupabase();
+      setSaveMsg("Saved!");
+      setTimeout(() => setSaveMsg(""), 2000);
+    } catch (e: unknown) {
+      setSaveMsg(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleAutoFill() {
-    if (!loaded) return;
-    const sortedPlayers = [...players].sort((a, b) => b.overall - a.overall);
-
-    // Get empty slot indices sorted by position priority: GK → DEF → MID → FWD
-    const positionPriority: Record<string, number> = {
-      GK: 0, CB: 1, LB: 1, RB: 1, CM: 2, LW: 3, RW: 3, ST: 3,
-    };
-    const emptySlots = formation.slots
-      .map((slot, i) => ({ slot, i }))
-      .filter(({ i }) => slots[i] === null)
-      .sort((a, b) => (positionPriority[a.slot.position] ?? 2) - (positionPriority[b.slot.position] ?? 2));
-
-    let remainingSlots = emptySlots.length;
-
-    emptySlots.forEach(({ slot, i }) => {
-      const state = useSquadStore.getState();
-      const remaining = state.budgetRemaining();
-      const targetPerSlot = remaining / remainingSlots;
-      const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
-
-      const available = sortedPlayers.find(
-        (p) =>
-          p.position === slot.position &&
-          !state.isPlayerInSquad(p.id) &&
-          p.marketValue <= maxSpend
-      );
-      if (available) {
-        state.addPlayer(i, available);
-        remainingSlots--;
-      }
-    });
-  }
+  const benchPlayers = bench
+    .map((p, i) => (p ? { player: p, index: i } : null))
+    .filter((x): x is { player: Player; index: number } => x !== null);
 
   return (
     <div className="flex flex-col h-full">
@@ -145,9 +100,6 @@ export default function SquadPage() {
         ))}
       </div>
 
-      {/* Position needs */}
-      <PositionGuide />
-
       {/* Budget */}
       <BudgetBar />
 
@@ -159,44 +111,75 @@ export default function SquadPage() {
       {/* Actions */}
       <div className="flex gap-2 px-4 pb-2">
         <button
-          onClick={handleAutoFill}
-          className="flex-1 h-9 border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
-        >
-          Auto-fill
-        </button>
-        <button
           onClick={clearSquad}
           className="flex-1 h-9 border border-border text-text-dim font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
         >
-          Clear
+          Clear Squad
         </button>
+        <Link
+          href="/club/players"
+          className="flex-1 h-9 border border-accent text-accent font-mono text-[11px] uppercase tracking-wide rounded-[4px] flex items-center justify-center hover:bg-accent/10 transition-colors duration-100"
+        >
+          Transfers
+        </Link>
       </div>
 
-      {/* Player market */}
-      <div className="flex-1 min-h-0 border-t border-border">
-        {loaded ? (
-          <PlayerMarket
-            players={players}
-            onSelectPlayer={handleSelectPlayer}
-            filterPosition={filterPos}
-          />
+      {/* Bench section */}
+      <div className="flex-1 min-h-0 border-t border-border px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-mono text-[10px] text-text-dim uppercase tracking-widest">
+            Bench ({benchFilledCount()}/10)
+          </span>
+        </div>
+        {benchPlayers.length === 0 ? (
+          <p className="font-mono text-xs text-text-dim">
+            No bench players. <Link href="/club/players" className="text-accent">Add via Transfers</Link>
+          </p>
         ) : (
-          <div className="p-4">
-            <div className="h-3 bg-border rounded-sm w-32 mb-2" />
-            <div className="h-3 bg-border rounded-sm w-48 mb-2" />
-            <div className="h-3 bg-border rounded-sm w-40" />
+          <div className="flex flex-col gap-1">
+            {benchPlayers.map(({ player, index }) => (
+              <button
+                key={player.id}
+                onClick={() => handleBenchTap(player, index)}
+                className="flex items-center gap-2 h-9 px-2 rounded-[3px] hover:bg-surface-alt transition-colors duration-100 text-left w-full"
+              >
+                <span className="font-mono text-[10px] text-text-dim uppercase w-6">
+                  {player.position}
+                </span>
+                <span className="font-mono text-xs text-text flex-1 truncate">
+                  {player.name}
+                </span>
+                <span className="font-mono text-xs text-accent tabular-nums w-6 text-right">
+                  {player.overall}
+                </span>
+                <span className="font-mono text-[10px] text-gold tabular-nums">
+                  {formatPrice(player.marketValue)}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>
 
       {/* Sticky footer */}
       <div className="sticky bottom-14 bg-surface border-t border-border px-4 py-2 flex items-center justify-between">
-        <span className="font-mono text-xs text-text-mid">
-          Squad {filledCount()}/11
-        </span>
-        <span className="font-mono text-xs text-gold tabular-nums">
-          {formatPrice(totalSpent())} spent
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs text-text-mid">
+            {filledCount()}/11 + {benchFilledCount()}/10
+          </span>
+          {saveMsg && (
+            <span className={cn("font-mono text-[10px]", saveMsg === "Saved!" ? "text-accent" : "text-danger")}>
+              {saveMsg}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="h-8 px-4 bg-accent text-black font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
       </div>
 
       {/* Player detail sheet */}
@@ -207,10 +190,9 @@ export default function SquadPage() {
           setShowDetail(false);
           setDetailPlayer(null);
         }}
-        onAdd={handleAddPlayer}
-        onRemove={handleRemovePlayer}
-        inSquad={detailPlayer ? isPlayerInSquad(detailPlayer.id) : false}
-        canAfford={detailPlayer ? canAfford(detailPlayer) : false}
+        onRemove={handleRemove}
+        inSquad={true}
+        canAfford={false}
       />
     </div>
   );

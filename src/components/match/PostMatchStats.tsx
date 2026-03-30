@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { useMatchStore } from "@/lib/stores/match-store";
 import Link from "next/link";
 
@@ -40,6 +41,37 @@ export default function PostMatchStats() {
   const { stats, homeScore, awayScore, isFinished, homeTeam, awayTeam } =
     useMatchStore();
 
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const didSave = useRef(false);
+
+  useEffect(() => {
+    if (!isFinished || !stats || didSave.current) return;
+    didSave.current = true;
+
+    async function persistResult() {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/match/record-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            homeScore,
+            awayScore,
+            stats,
+            events: useMatchStore.getState().events,
+          }),
+        });
+        if (res.ok) setSaved(true);
+      } catch {
+        // silent fail — match still shows locally
+      } finally {
+        setSaving(false);
+      }
+    }
+    persistResult();
+  }, [isFinished, stats, homeScore, awayScore]);
+
   if (!isFinished || !stats) return null;
 
   const result =
@@ -78,11 +110,17 @@ export default function PostMatchStats() {
         Back to Home
       </Link>
       <Link
-        href="/squad"
+        href="/club/squad"
         className="block w-full h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-sm uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
       >
         Tweak Squad
       </Link>
+      {saving && (
+        <p className="font-mono text-[10px] text-text-dim text-center">Saving result...</p>
+      )}
+      {saved && (
+        <p className="font-mono text-[10px] text-accent text-center">Result saved</p>
+      )}
     </div>
   );
 }

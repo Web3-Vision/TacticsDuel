@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { FORMATIONS, getFormation } from "@/lib/data/formations";
 import PitchView from "@/components/pitch/PitchView";
@@ -81,24 +81,65 @@ export default function TacticsPage() {
   const [htWinningMentality, setHtWinningMentality] =
     useState<Mentality>("Defensive");
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  // Load saved tactics on mount
+  useEffect(() => {
+    async function loadTactics() {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("tactics")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (data) {
+        if (data.formation) setFormation(data.formation);
+        if (data.mentality) setMentality(data.mentality as Mentality);
+        if (data.tempo) setTempo(data.tempo as Tempo);
+        if (data.pressing) setPressing(data.pressing as Pressing);
+        if (data.width) setWidth(data.width as Width);
+        if (data.ht_if_losing_mentality) {
+          setShowHT(true);
+          setHtLosingMentality(data.ht_if_losing_mentality as Mentality);
+        }
+        if (data.ht_if_winning_mentality) {
+          setHtWinningMentality(data.ht_if_winning_mentality as Mentality);
+        }
+      }
+      setLoaded(true);
+    }
+    loadTactics();
+  }, [setFormation]);
 
   async function handleSave() {
+    setSaveError("");
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    await supabase.from("tactics").upsert({
+    const { error } = await supabase.from("tactics").upsert({
       user_id: user.id,
       formation: formationId,
       mentality,
       tempo,
       pressing,
       width,
-      ht_losing_mentality: showHT ? htLosingMentality : null,
-      ht_winning_mentality: showHT ? htWinningMentality : null,
+      ht_if_losing_mentality: showHT ? htLosingMentality : null,
+      ht_if_winning_mentality: showHT ? htWinningMentality : null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
+
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -159,18 +200,22 @@ export default function TacticsPage() {
       {showHT && (
         <div className="flex flex-col gap-3 bg-surface border border-border rounded-md p-3">
           <PillRow
-            label="If Losing → Mentality"
+            label="If Losing -> Mentality"
             options={MENTALITIES}
             value={htLosingMentality}
             onChange={setHtLosingMentality}
           />
           <PillRow
-            label="If Winning → Mentality"
+            label="If Winning -> Mentality"
             options={MENTALITIES}
             value={htWinningMentality}
             onChange={setHtWinningMentality}
           />
         </div>
+      )}
+
+      {saveError && (
+        <p className="font-mono text-xs text-danger">{saveError}</p>
       )}
 
       {/* Save button - sticky */}
