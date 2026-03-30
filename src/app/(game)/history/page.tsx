@@ -50,9 +50,10 @@ export default async function HistoryPage() {
               : match.away_elo_change;
 
             return (
-              <div
+              <Link
                 key={match.id}
-                className="h-[44px] flex items-center gap-2 px-3 bg-surface border border-border rounded-[4px]"
+                href={`/match/${match.id}`}
+                className="h-[44px] flex items-center gap-2 px-3 bg-surface border border-border rounded-[4px] hover:border-border-light transition-colors duration-100"
               >
                 <span
                   className={cn(
@@ -86,7 +87,7 @@ export default async function HistoryPage() {
                     ? new Date(match.completed_at).toLocaleDateString()
                     : ""}
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>

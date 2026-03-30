@@ -82,8 +82,24 @@ export default function TacticsPage() {
     useState<Mentality>("Defensive");
   const [saved, setSaved] = useState(false);
 
-  function handleSave() {
-    // TODO: save to Supabase
+  async function handleSave() {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.from("tactics").upsert({
+      user_id: user.id,
+      formation: formationId,
+      mentality,
+      tempo,
+      pressing,
+      width,
+      ht_losing_mentality: showHT ? htLosingMentality : null,
+      ht_winning_mentality: showHT ? htWinningMentality : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

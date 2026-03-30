@@ -13,7 +13,7 @@ export default function MatchReplayPage() {
   const matchId = params.id as string;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { loadMatch } = useMatchStore();
+  const { loadReplay } = useMatchStore();
 
   useEffect(() => {
     async function fetchMatch() {
@@ -56,12 +56,12 @@ export default function MatchReplayPage() {
       const homeClub = match.home_club_name ?? "Home";
       const awayClub = match.away_club_name ?? "Away";
 
-      loadMatch(events, homeClub, awayClub);
+      loadReplay(events, null, homeClub, awayClub);
       setLoading(false);
     }
 
     fetchMatch();
-  }, [matchId, router, loadMatch]);
+  }, [matchId, router, loadReplay]);
 
   if (loading) {
     return (

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Player, Position } from "../types";
 import { SALARY_CAP } from "../utils";
 import { getFormation } from "../data/formations";
+import { getPlayerById } from "../data/players";
 
 interface SquadState {
   formationId: string;
@@ -14,6 +15,8 @@ interface SquadState {
   removePlayer: (slotIndex: number) => void;
   clearSquad: () => void;
   loadSquad: (formationId: string, slots: (Player | null)[]) => void;
+  saveToSupabase: () => Promise<void>;
+  loadFromSupabase: () => Promise<void>;
 
   // Derived
   totalSpent: () => number;
@@ -56,6 +59,43 @@ export const useSquadStore = create<SquadState>((set, get) => ({
   clearSquad: () => set({ slots: Array(11).fill(null), activeSlotIndex: null }),
 
   loadSquad: (formationId, slots) => set({ formationId, slots }),
+
+  saveToSupabase: async () => {
+    const { createClient } = await import("../supabase/client");
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const state = get();
+    const playerIds = state.slots.map((p) => p?.id ?? null);
+
+    await supabase.from("squads").upsert({
+      user_id: user.id,
+      formation: state.formationId,
+      player_ids: playerIds,
+      total_cost: state.totalSpent(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+  },
+
+  loadFromSupabase: async () => {
+    const { createClient } = await import("../supabase/client");
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("squads")
+      .select("formation, player_ids")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!data) return;
+
+    const playerIds = data.player_ids as (string | null)[];
+    const slots = playerIds.map((id) => (id ? getPlayerById(id) ?? null : null));
+    set({ formationId: data.formation, slots });
+  },
 
   totalSpent: () => {
     return get().slots.reduce(
