@@ -14,7 +14,8 @@ export default function TopBar({ profile }: TopBarProps) {
     : null;
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-12 bg-surface border-b border-border flex items-center px-4 pt-safe">
+    <header className="fixed top-0 left-0 right-0 z-50 h-12 bg-surface border-b border-border pt-safe">
+      <div className="flex items-center h-full px-4 max-w-[480px] mx-auto">
       <div className="flex-1 min-w-0">
         <p className="font-mono text-[13px] text-text truncate">
           {profile?.club_name ?? "TacticsDuel"}
@@ -33,6 +34,7 @@ export default function TopBar({ profile }: TopBarProps) {
         <span className="font-mono text-xs text-text-mid tabular-nums">
           {profile?.coins ?? 0}
         </span>
+      </div>
       </div>
     </header>
   );

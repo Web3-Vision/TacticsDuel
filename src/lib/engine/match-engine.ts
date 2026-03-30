@@ -126,8 +126,8 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
     const atkSquad = possTeam === "home" ? config.homeSquad : config.awaySquad;
     const defSquad = possTeam === "home" ? config.awaySquad : config.homeSquad;
 
-    // Base event chance: ~28%, higher in last 10 mins
-    let eventChance = 0.28;
+    // Base event chance: ~50%, higher in last 10 mins
+    let eventChance = 0.50;
     if (minute > 80) eventChance += 0.06;
     if (minute > 85) eventChance += 0.04;
     eventChance *= atkRatings.eventRate;
@@ -163,7 +163,7 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
     // --- Event Resolution Chain ---
 
     // Step 1: Build-up (midfield vs midfield)
-    const buildUpSuccess = rng() < 0.55 + (atkRatings.midfield - defRatings.midfield) * 0.003;
+    const buildUpSuccess = rng() < 0.70 + (atkRatings.midfield - defRatings.midfield) * 0.004;
 
     if (!buildUpSuccess) {
       // Interception/tackle
@@ -201,7 +201,7 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
     const defBlock =
       (defRatings.defense + defRatings.compactness) / 100 * 0.4;
 
-    const chanceSucceeds = rng() < chanceQuality * 0.6 - defBlock * 0.3;
+    const chanceSucceeds = rng() < 0.25 + chanceQuality * 0.45 - defBlock * 0.15;
 
     if (!chanceSucceeds) {
       // Chance blocked or lost
@@ -367,7 +367,7 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
     const gk = pickGK(defSquad, rng);
     const gkStrength = gk.goalkeeping / 99;
     const goalChance =
-      (0.24 + shotQuality * 0.12 - gkStrength * 0.10) * atkRatings.conversionRate;
+      (0.35 + shotQuality * 0.18 - gkStrength * 0.10) * atkRatings.conversionRate;
 
     if (rng() < goalChance) {
       // GOAL!
