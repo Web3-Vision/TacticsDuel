@@ -2,43 +2,66 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getMagic } from "@/lib/magic/client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const supabase = createClient();
+  const router = useRouter();
 
-  async function handleMagicLink(e: React.FormEvent) {
+  async function handleMagicLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    try {
+      const magic = getMagic();
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSent(true);
+      // Authenticate with Magic (email OTP)
+      const didToken = await magic.auth.loginWithEmailOTP({ email });
+
+      if (!didToken) {
+        setError("Magic authentication failed");
+        setLoading(false);
+        return;
+      }
+
+      // Send DID token to bridge API
+      const res = await fetch("/api/auth/magic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ didToken }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Authentication failed");
+        setLoading(false);
+        return;
+      }
+
+      // Sign in to Supabase with the temp password (no emails, no rate limits)
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.tempPassword,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
+      }
+
+      router.push("/home");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+      setLoading(false);
     }
-    setLoading(false);
-  }
-
-  async function handleGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (error) setError(error.message);
   }
 
   return (
@@ -51,49 +74,23 @@ export default function LoginPage() {
           Build. Tacticate. Duel.
         </p>
 
-        {sent ? (
-          <div className="bg-surface border border-border rounded-md p-4">
-            <p className="font-mono text-sm text-accent">Check your email</p>
-            <p className="text-text-mid text-xs mt-2">
-              We sent a login link to {email}
-            </p>
-          </div>
-        ) : (
-          <>
-            <button
-              onClick={handleGoogle}
-              className="w-full h-[44px] bg-surface border border-border rounded-[4px] font-mono text-sm uppercase tracking-wide text-text hover:border-border-light transition-colors duration-100"
-            >
-              Continue with Google
-            </button>
-
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-text-dim text-xs font-mono uppercase">
-                or
-              </span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-
-            <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
-                required
-                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-[44px] bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
-              >
-                {loading ? "Sending..." : "Send Magic Link"}
-              </button>
-            </form>
-          </>
-        )}
+        <form onSubmit={handleMagicLogin} className="flex flex-col gap-3">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
+            required
+            className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-[44px] bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
+          >
+            {loading ? "Authenticating..." : "Login with Email"}
+          </button>
+        </form>
 
         {error && (
           <p className="text-danger text-xs font-mono mt-3">{error}</p>
@@ -104,6 +101,10 @@ export default function LoginPage() {
           <Link href="/signup" className="text-accent hover:underline">
             Create a club
           </Link>
+        </p>
+
+        <p className="text-text-dim text-xs text-center mt-3 opacity-50">
+          Powered by Magic
         </p>
       </div>
     </div>

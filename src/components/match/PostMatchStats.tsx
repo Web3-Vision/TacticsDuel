@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMatchStore } from "@/lib/stores/match-store";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -64,6 +64,37 @@ export default function PostMatchStats() {
       }
     }
   }, []);
+
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const didSave = useRef(false);
+
+  useEffect(() => {
+    if (!isFinished || !stats || didSave.current) return;
+    didSave.current = true;
+
+    async function persistResult() {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/match/record-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            homeScore,
+            awayScore,
+            stats,
+            events: useMatchStore.getState().events,
+          }),
+        });
+        if (res.ok) setSaved(true);
+      } catch {
+        // silent fail — match still shows locally
+      } finally {
+        setSaving(false);
+      }
+    }
+    persistResult();
+  }, [isFinished, stats, homeScore, awayScore]);
 
   if (!isFinished || !stats) return null;
 
@@ -157,14 +188,14 @@ export default function PostMatchStats() {
 
       {/* Actions */}
       <Link
-        href="/dashboard"
+        href="/home"
         className="block w-full h-[44px] leading-[44px] text-center bg-accent text-black font-mono text-sm uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100"
       >
-        Continue
+        Back to Home
       </Link>
       <div className="flex gap-2">
         <Link
-          href="/squad/tactics"
+          href="/club/tactics"
           className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
         >
           Tactics
@@ -176,6 +207,12 @@ export default function PostMatchStats() {
           Play Again
         </Link>
       </div>
+      {saving && (
+        <p className="font-mono text-[10px] text-text-dim text-center">Saving result...</p>
+      )}
+      {saved && (
+        <p className="font-mono text-[10px] text-accent text-center">Result saved</p>
+      )}
     </div>
   );
 }

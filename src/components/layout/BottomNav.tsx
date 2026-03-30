@@ -2,15 +2,13 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutGrid, Users, PlayCircle, Trophy, User } from "lucide-react";
+import { LayoutGrid, PlayCircle, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { href: "/dashboard", label: "Home", icon: LayoutGrid },
-  { href: "/squad", label: "Squad", icon: Users },
+  { href: "/home", label: "Home", icon: LayoutGrid },
   { href: "/play", label: "Play", icon: PlayCircle },
-  { href: "/divisions", label: "Ladder", icon: Trophy },
-  { href: "/profile", label: "Profile", icon: User },
+  { href: "/club", label: "Club", icon: Shield },
 ];
 
 export default function BottomNav() {
@@ -18,10 +16,12 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 h-14 bg-surface border-t border-border pb-safe">
-      <div className="flex items-stretch h-full max-w-[480px] mx-auto">
+      <div className="flex items-stretch h-full max-w-[640px] mx-auto">
         {tabs.map((tab) => {
           const isActive =
-            pathname === tab.href || pathname.startsWith(tab.href + "/");
+            tab.href === "/club"
+              ? pathname.startsWith("/club")
+              : pathname === tab.href || pathname.startsWith(tab.href + "/");
           const Icon = tab.icon;
 
           return (
