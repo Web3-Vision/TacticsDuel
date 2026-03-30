@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import type { Player, Tactics } from "@/lib/types";
+
+// Ghost opponent generation (server-side, no client imports)
+function generateGhostTactics(): Tactics {
+  const mentalities = ["Defensive", "Cautious", "Balanced", "Attacking", "Balanced"] as const;
+  const tempos = ["Slow", "Normal", "Fast", "Normal"] as const;
+  const pressings = ["Low", "Medium", "High", "Medium"] as const;
+  const widths = ["Narrow", "Normal", "Wide", "Normal"] as const;
+  const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
+  return {
+    formation: "4-3-3",
+    mentality: pick(mentalities),
+    tempo: pick(tempos),
+    pressing: pick(pressings),
+    width: pick(widths),
+    htIfLosingMentality: "Attacking",
+    htIfWinningMentality: "Defensive",
+  };
+}
+
+const GHOST_WAIT_THRESHOLD = 30; // seconds before generating ghost
 
 // POST: Join matchmaking queue
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const supabase = await createClient();
     const {
@@ -68,7 +89,7 @@ export async function POST(request: Request) {
 }
 
 // GET: Check queue status
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = await createClient();
     const {
@@ -107,8 +128,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ inQueue: false, matchFound: false });
     }
 
-    // Try matchmaking
-    const { data: profile } = await supabase
+    const waitSeconds = Math.round(
+      (Date.now() - new Date(queueEntry.joined_at).getTime()) / 1000
+    );
+
+    // Try matchmaking with real opponent
+    const { data: profileData } = await supabase
       .from("profiles")
       .select("elo_rating")
       .eq("id", user.id)
@@ -117,17 +142,42 @@ export async function GET(request: Request) {
     const match = await tryFindMatch(
       supabase,
       user.id,
-      profile?.elo_rating ?? 1000,
+      profileData?.elo_rating ?? 1000,
       queueEntry.joined_at
     );
 
+    if (match) {
+      return NextResponse.json({
+        inQueue: false,
+        matchFound: true,
+        matchId: match.id,
+        waitTime: waitSeconds,
+      });
+    }
+
+    // Ghost opponent fallback after threshold
+    if (waitSeconds >= GHOST_WAIT_THRESHOLD) {
+      const ghostMatch = await createGhostMatch(
+        supabase,
+        user.id,
+        profileData?.elo_rating ?? 1000
+      );
+      if (ghostMatch) {
+        // Remove from queue
+        await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
+        return NextResponse.json({
+          inQueue: false,
+          matchFound: true,
+          matchId: ghostMatch.id,
+          waitTime: waitSeconds,
+        });
+      }
+    }
+
     return NextResponse.json({
-      inQueue: !match,
-      matchFound: !!match,
-      matchId: match?.id ?? null,
-      waitTime: Math.round(
-        (Date.now() - new Date(queueEntry.joined_at).getTime()) / 1000
-      ),
+      inQueue: true,
+      matchFound: false,
+      waitTime: waitSeconds,
     });
   } catch (error) {
     console.error("Queue check error:", error);
@@ -139,7 +189,7 @@ export async function GET(request: Request) {
 }
 
 // DELETE: Leave queue
-export async function DELETE(request: Request) {
+export async function DELETE() {
   try {
     const supabase = await createClient();
     const {
@@ -152,7 +202,7 @@ export async function DELETE(request: Request) {
     await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -182,15 +232,43 @@ async function tryFindMatch(supabase: any, userId: string, elo: number, joinedAt
 
   const opponent = opponents[0];
 
-  // Get both players' squads and tactics
-  const [homeSquad, awaySquad, homeTactics, awayTactics] = await Promise.all([
+  // Get both players' squads (as Player objects via player_id lookup)
+  const [homeSquadRes, awaySquadRes, homeTacticsRes, awayTacticsRes] = await Promise.all([
     supabase.from("squads").select("*").eq("user_id", userId).eq("is_starter", true),
     supabase.from("squads").select("*").eq("user_id", opponent.user_id).eq("is_starter", true),
     supabase.from("tactics").select("*").eq("user_id", userId).single(),
     supabase.from("tactics").select("*").eq("user_id", opponent.user_id).single(),
   ]);
 
-  // Create match
+  // We store the squad row data; the simulate endpoint will resolve player objects
+  const homeSquadRows = homeSquadRes.data ?? [];
+  const awaySquadRows = awaySquadRes.data ?? [];
+
+  const homeTactics = homeTacticsRes.data
+    ? {
+        formation: homeTacticsRes.data.formation,
+        mentality: homeTacticsRes.data.mentality,
+        tempo: homeTacticsRes.data.tempo,
+        pressing: homeTacticsRes.data.pressing,
+        width: homeTacticsRes.data.width,
+        htIfLosingMentality: homeTacticsRes.data.ht_if_losing_mentality,
+        htIfWinningMentality: homeTacticsRes.data.ht_if_winning_mentality,
+      }
+    : { formation: "4-3-3", mentality: "Balanced", tempo: "Normal", pressing: "Medium", width: "Normal" };
+
+  const awayTactics = awayTacticsRes.data
+    ? {
+        formation: awayTacticsRes.data.formation,
+        mentality: awayTacticsRes.data.mentality,
+        tempo: awayTacticsRes.data.tempo,
+        pressing: awayTacticsRes.data.pressing,
+        width: awayTacticsRes.data.width,
+        htIfLosingMentality: awayTacticsRes.data.ht_if_losing_mentality,
+        htIfWinningMentality: awayTacticsRes.data.ht_if_winning_mentality,
+      }
+    : { formation: "4-3-3", mentality: "Balanced", tempo: "Normal", pressing: "Medium", width: "Normal" };
+
+  // Create match — store squad rows (simulate endpoint will resolve to Player objects)
   const { data: match, error: matchError } = await supabase
     .from("matches")
     .insert({
@@ -198,10 +276,10 @@ async function tryFindMatch(supabase: any, userId: string, elo: number, joinedAt
       away_user_id: opponent.user_id,
       match_type: "ranked",
       status: "accepted",
-      home_squad: homeSquad.data ?? [],
-      away_squad: awaySquad.data ?? [],
-      home_tactics: homeTactics.data ?? {},
-      away_tactics: awayTactics.data ?? {},
+      home_squad: homeSquadRows,
+      away_squad: awaySquadRows,
+      home_tactics: homeTactics,
+      away_tactics: awayTactics,
       home_elo_before: elo,
       away_elo_before: opponent.elo_rating,
     })
@@ -217,5 +295,104 @@ async function tryFindMatch(supabase: any, userId: string, elo: number, joinedAt
     .delete()
     .eq("user_id", opponent.user_id);
 
+  return match;
+}
+
+// Create a ghost opponent match using AI-generated squad
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createGhostMatch(supabase: any, userId: string, userElo: number) {
+  // Get user's squad
+  const { data: squadRows } = await supabase
+    .from("squads")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_starter", true);
+
+  const { data: tacticsData } = await supabase
+    .from("tactics")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+
+  if (!squadRows || squadRows.length === 0) return null;
+
+  const userTactics = tacticsData
+    ? {
+        formation: tacticsData.formation,
+        mentality: tacticsData.mentality,
+        tempo: tacticsData.tempo,
+        pressing: tacticsData.pressing,
+        width: tacticsData.width,
+        htIfLosingMentality: tacticsData.ht_if_losing_mentality,
+        htIfWinningMentality: tacticsData.ht_if_winning_mentality,
+      }
+    : { formation: "4-3-3", mentality: "Balanced", tempo: "Normal", pressing: "Medium", width: "Normal" };
+
+  // Try to find a recently active real player's squad as ghost
+  const { data: recentOpponents } = await supabase
+    .from("profiles")
+    .select("id, elo_rating")
+    .neq("id", userId)
+    .gte("elo_rating", userElo - 300)
+    .lte("elo_rating", userElo + 300)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  let ghostSquad: unknown[] = [];
+  let ghostTactics = generateGhostTactics();
+  let ghostElo = userElo + Math.floor(Math.random() * 100) - 50; // Roughly similar ELO
+
+  if (recentOpponents && recentOpponents.length > 0) {
+    // Pick a random recent opponent
+    const ghost = recentOpponents[Math.floor(Math.random() * recentOpponents.length)];
+    ghostElo = ghost.elo_rating;
+
+    const { data: ghostSquadData } = await supabase
+      .from("squads")
+      .select("*")
+      .eq("user_id", ghost.id)
+      .eq("is_starter", true);
+
+    const { data: ghostTacticsData } = await supabase
+      .from("tactics")
+      .select("*")
+      .eq("user_id", ghost.id)
+      .single();
+
+    if (ghostSquadData && ghostSquadData.length >= 11) {
+      ghostSquad = ghostSquadData;
+      if (ghostTacticsData) {
+        ghostTactics = {
+          formation: ghostTacticsData.formation,
+          mentality: ghostTacticsData.mentality,
+          tempo: ghostTacticsData.tempo,
+          pressing: ghostTacticsData.pressing,
+          width: ghostTacticsData.width,
+          htIfLosingMentality: ghostTacticsData.ht_if_losing_mentality,
+          htIfWinningMentality: ghostTacticsData.ht_if_winning_mentality,
+        };
+      }
+    }
+  }
+
+  // If no real ghost found, the simulate endpoint will generate AI squad
+  const { data: match, error } = await supabase
+    .from("matches")
+    .insert({
+      home_user_id: userId,
+      away_user_id: null, // ghost match
+      match_type: "ranked",
+      status: "accepted",
+      home_squad: squadRows,
+      away_squad: ghostSquad.length > 0 ? ghostSquad : [],
+      home_tactics: userTactics,
+      away_tactics: ghostTactics,
+      home_elo_before: userElo,
+      away_elo_before: ghostElo,
+    })
+    .select()
+    .single();
+
+  if (error) return null;
   return match;
 }
