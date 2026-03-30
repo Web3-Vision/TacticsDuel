@@ -94,7 +94,7 @@ export default async function RightPanel({ userId }: RightPanelProps) {
           Match History
         </Link>
         <Link
-          href="/divisions"
+          href="/club/leaderboard"
           className="font-mono text-xs text-text-mid h-7 flex items-center hover:text-accent transition-colors duration-100"
         >
           Divisions

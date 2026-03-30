@@ -3,11 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSquadStore } from "@/lib/stores/squad-store";
-import { useMatchStore } from "@/lib/stores/match-store";
-import { simulateMatch } from "@/lib/engine/match-engine";
-import { generateAISquad, generateAITactics } from "@/lib/engine/ai-opponent";
-import { getFormation } from "@/lib/data/formations";
-import type { Player, Tactics } from "@/lib/types";
+import type { Player } from "@/lib/types";
 import { Swords, Users, Bot, Copy, Share2, ArrowLeft, Check } from "lucide-react";
 
 type FriendView = "menu" | "create" | "join" | "pending";
@@ -24,8 +20,7 @@ interface Invite {
 
 export default function PlayPage() {
   const router = useRouter();
-  const { slots, formationId, filledCount } = useSquadStore();
-  const loadMatch = useMatchStore((s) => s.loadMatch);
+  const { filledCount } = useSquadStore();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -49,34 +44,14 @@ export default function PlayPage() {
 
   // --- VS AI ---
   function handlePlayAI() {
-    if (!squadReady || players.length === 0) return;
-    setLoading(true);
+    if (!squadReady) return;
+    router.push("/play/confirm?mode=ai");
+  }
 
-    const formation = getFormation(formationId);
-    const positions = formation.slots.map((s) => s.position);
-
-    const homeSquad = slots.filter((p): p is Player => p !== null);
-    const homeTactics: Tactics = {
-      formation: formationId,
-      mentality: "Balanced",
-      tempo: "Normal",
-      pressing: "Medium",
-      width: "Normal",
-    };
-
-    const awaySquad = generateAISquad(players, positions);
-    const awayTactics = generateAITactics();
-
-    const result = simulateMatch({
-      homeSquad,
-      awaySquad,
-      homeTactics,
-      awayTactics,
-      matchType: "ai",
-    });
-
-    loadMatch(result, "Your Team", "AI FC");
-    router.push("/match/live");
+  // --- Ranked ---
+  function handlePlayRanked() {
+    if (!squadReady) return;
+    router.push("/play/confirm?mode=ranked");
   }
 
   // --- Friend Match: Create Invite ---
@@ -524,6 +499,7 @@ export default function PlayPage() {
 
       {/* Ranked */}
       <button
+        onClick={handlePlayRanked}
         disabled={!squadReady}
         className="w-full bg-surface border border-border rounded-md p-4 flex items-center gap-4 hover:border-border-light transition-colors duration-100 disabled:opacity-40 text-left"
       >

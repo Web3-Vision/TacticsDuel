@@ -72,10 +72,10 @@ export default function PostMatchStats() {
       </div>
 
       <Link
-        href="/dashboard"
+        href="/home"
         className="block w-full h-[44px] leading-[44px] text-center bg-accent text-black font-mono text-sm uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100"
       >
-        Back to Dashboard
+        Back to Home
       </Link>
       <Link
         href="/squad"

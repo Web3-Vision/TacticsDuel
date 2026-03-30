@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function SquadRedirect() {
+export default function ClubPage() {
   redirect("/club/squad");
 }

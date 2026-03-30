@@ -84,13 +84,13 @@ export default function LeftPanel({ profile }: LeftPanelProps) {
       {/* Quick links */}
       <div className="flex flex-col gap-1">
         <Link
-          href="/squad"
+          href="/club/squad"
           className="font-mono text-xs text-text-mid h-8 flex items-center hover:text-accent transition-colors duration-100"
         >
           Edit Squad
         </Link>
         <Link
-          href="/squad/tactics"
+          href="/club/tactics"
           className="font-mono text-xs text-text-mid h-8 flex items-center hover:text-accent transition-colors duration-100"
         >
           Tactics

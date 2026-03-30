@@ -37,7 +37,9 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/signup");
   const isGameRoute =
+    request.nextUrl.pathname.startsWith("/home") ||
     request.nextUrl.pathname.startsWith("/dashboard") ||
+    request.nextUrl.pathname.startsWith("/club") ||
     request.nextUrl.pathname.startsWith("/squad") ||
     request.nextUrl.pathname.startsWith("/play") ||
     request.nextUrl.pathname.startsWith("/match") ||
@@ -57,12 +59,12 @@ export async function updateSession(request: NextRequest) {
   // Redirect authenticated users away from auth pages
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/home";
     return NextResponse.redirect(url);
   }
 
   // Redirect new users to onboarding (if they haven't completed it)
-  if (user && (request.nextUrl.pathname === "/dashboard" || request.nextUrl.pathname === "/")) {
+  if (user && (request.nextUrl.pathname === "/home" || request.nextUrl.pathname === "/dashboard" || request.nextUrl.pathname === "/")) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarding_completed")

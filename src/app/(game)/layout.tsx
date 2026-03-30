@@ -38,7 +38,7 @@ export default async function GameLayout({
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-col min-h-dvh max-w-[480px] w-full">
+      <div className="flex flex-col min-h-dvh max-w-[640px] w-full">
         <TopBar profile={profile} />
         <main className="flex-1 pt-12 pb-14 overflow-y-auto">{children}</main>
         <BottomNav />

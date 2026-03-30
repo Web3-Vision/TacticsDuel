@@ -192,7 +192,7 @@ export default function OnboardingPage() {
         throw new Error(data.error || "Failed to save profile");
       }
 
-      router.push("/dashboard");
+      router.push("/home");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
       setSaving(false);

@@ -57,7 +57,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
