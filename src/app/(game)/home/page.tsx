@@ -48,9 +48,8 @@ export default async function HomePage() {
     const isHome = m.home_user_id === user?.id;
     const myScore = isHome ? m.home_score : m.away_score;
     const theirScore = isHome ? m.away_score : m.home_score;
-    if (myScore > theirScore) return "W";
-    if (myScore < theirScore) return "L";
-    return "D";
+    const result = myScore > theirScore ? "W" : myScore < theirScore ? "L" : "D";
+    return { result, score: `${myScore}-${theirScore}` };
   });
 
   return (

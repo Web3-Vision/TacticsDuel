@@ -48,12 +48,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: matchError.message }, { status: 500 });
     }
 
-    // Update profile W/D/L
+    // Update profile W/D/L and award coins
     const { data: profile } = await supabase
       .from("profiles")
-      .select("wins, draws, losses, current_streak, best_streak")
+      .select("wins, draws, losses, current_streak, best_streak, coins")
       .eq("id", user.id)
       .single();
+
+    let coinsAwarded = 0;
 
     if (profile) {
       const result =
@@ -65,6 +67,11 @@ export async function POST(request: Request) {
             ? 0
             : profile.current_streak;
 
+      // Coin rewards: base + goal bonus
+      const baseCoins = result === "win" ? 300 : result === "draw" ? 150 : 50;
+      const goalBonus = homeScore * 50;
+      coinsAwarded = baseCoins + goalBonus;
+
       await supabase
         .from("profiles")
         .update({
@@ -73,12 +80,13 @@ export async function POST(request: Request) {
           losses: profile.losses + (result === "loss" ? 1 : 0),
           current_streak: newStreak,
           best_streak: Math.max(profile.best_streak, newStreak),
+          coins: profile.coins + coinsAwarded,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
     }
 
-    return NextResponse.json({ success: true, matchId: match?.id });
+    return NextResponse.json({ success: true, matchId: match?.id, coinsAwarded });
   } catch (error) {
     console.error("Record AI match error:", error);
     return NextResponse.json(

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useMatchStore } from "@/lib/stores/match-store";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, Minus, Trophy, Star } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Trophy, Star, Coins } from "lucide-react";
 
 interface RankedMeta {
   matchId: string;
@@ -48,10 +48,17 @@ function StatRow({
   );
 }
 
+function ratingColor(rating: number): string {
+  if (rating >= 8) return "text-win";
+  if (rating >= 6) return "text-text";
+  return "text-loss";
+}
+
 export default function PostMatchStats() {
   const { stats, homeScore, awayScore, isFinished, homeTeam, awayTeam, playerRatings, manOfTheMatch } =
     useMatchStore();
   const [rankedMeta, setRankedMeta] = useState<RankedMeta | null>(null);
+  const [coinsAwarded, setCoinsAwarded] = useState<number | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -86,7 +93,13 @@ export default function PostMatchStats() {
             events: useMatchStore.getState().events,
           }),
         });
-        if (res.ok) setSaved(true);
+        if (res.ok) {
+          const data = await res.json();
+          setSaved(true);
+          if (data.coinsAwarded != null) {
+            setCoinsAwarded(data.coinsAwarded);
+          }
+        }
       } catch {
         // silent fail — match still shows locally
       } finally {
@@ -107,25 +120,52 @@ export default function PostMatchStats() {
   const divPointsChange = rankedMeta?.homeDivPointsChange ?? 0;
   const isRanked = rankedMeta?.matchType === "ranked";
 
+  // Sort player ratings highest first
+  const sortedRatings = Object.entries(playerRatings)
+    .sort(([, a], [, b]) => b - a);
+
   return (
     <div className="p-4 flex flex-col gap-4 overflow-y-auto">
-      {/* Result header */}
+      {/* Result header with team names */}
       <div className="text-center">
         <p className="font-mono text-xs text-text-dim uppercase tracking-wide">
           Full Time
         </p>
-        <p className="font-mono text-3xl font-semibold tabular-nums mt-1">
-          <span className="text-home">{homeScore}</span>
-          <span className="text-text-dim mx-2">-</span>
-          <span className="text-away">{awayScore}</span>
-        </p>
+        <div className="flex items-center justify-center gap-3 mt-1">
+          <span className="font-mono text-xs text-home uppercase tracking-wide truncate max-w-[120px]">
+            {homeTeam}
+          </span>
+          <span className="font-mono text-3xl font-semibold tabular-nums">
+            <span className="text-home">{homeScore}</span>
+            <span className="text-text-dim mx-2">-</span>
+            <span className="text-away">{awayScore}</span>
+          </span>
+          <span className="font-mono text-xs text-away uppercase tracking-wide truncate max-w-[120px]">
+            {awayTeam}
+          </span>
+        </div>
         <p className={cn("font-mono text-sm uppercase tracking-wide mt-1 font-medium", resultColor)}>
           {result}
         </p>
       </div>
 
-      {/* Ranked impact */}
-      {isRanked && (
+      {/* Coin rewards */}
+      {coinsAwarded != null && coinsAwarded > 0 && (
+        <div className="bg-surface-alt border border-gold/30 rounded-md p-3 flex items-center gap-3">
+          <Coins size={16} className="text-gold shrink-0" />
+          <div className="flex-1">
+            <p className="font-mono text-[10px] text-gold uppercase tracking-wide">Coins Earned</p>
+            <p className="font-mono text-md text-text font-semibold tabular-nums">+{coinsAwarded}</p>
+          </div>
+          <span className="font-mono text-[10px] text-text-dim">
+            {homeScore > awayScore ? "Win 300" : homeScore < awayScore ? "Loss 50" : "Draw 150"}
+            {homeScore > 0 ? ` + ${homeScore} goal${homeScore > 1 ? "s" : ""} bonus` : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Ranked impact or practice match label */}
+      {isRanked ? (
         <div className="bg-surface-alt border border-border rounded-md p-3 flex items-center gap-4">
           <div className="flex-1 flex flex-col items-center gap-0.5">
             <span className="font-mono text-[10px] text-text-dim uppercase">ELO</span>
@@ -159,6 +199,12 @@ export default function PostMatchStats() {
             </div>
           </div>
         </div>
+      ) : (
+        <div className="bg-surface-alt border border-border rounded-md p-2 text-center">
+          <span className="font-mono text-[10px] text-text-dim uppercase tracking-wide">
+            Practice Match — No ELO Impact
+          </span>
+        </div>
       )}
 
       {/* Match stats */}
@@ -175,8 +221,45 @@ export default function PostMatchStats() {
         <StatRow label="Pass %" home={stats.homePassAccuracy} away={stats.awayPassAccuracy} />
       </div>
 
-      {/* Man of the Match */}
-      {manOfTheMatch && (
+      {/* Player Ratings */}
+      {sortedRatings.length > 0 && (
+        <div className="bg-surface border border-border rounded-md p-3">
+          <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide mb-2">
+            Player Ratings
+          </p>
+          <div className="flex flex-col gap-1">
+            {sortedRatings.map(([name, rating]) => {
+              const isMvp = name === manOfTheMatch;
+              return (
+                <div
+                  key={name}
+                  className={cn(
+                    "flex items-center gap-2 h-7 px-2 rounded-[3px]",
+                    isMvp && "bg-gold/10 border border-gold/20"
+                  )}
+                >
+                  {isMvp && <Star size={12} className="text-gold shrink-0" />}
+                  <span className={cn(
+                    "font-mono text-xs truncate flex-1",
+                    isMvp ? "text-gold" : "text-text-mid"
+                  )}>
+                    {name}
+                  </span>
+                  <span className={cn(
+                    "font-mono text-xs font-semibold tabular-nums",
+                    ratingColor(rating)
+                  )}>
+                    {rating.toFixed(1)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Man of the Match (kept as standalone highlight if no ratings) */}
+      {manOfTheMatch && sortedRatings.length === 0 && (
         <div className="bg-surface border border-gold/30 rounded-md p-3 flex items-center gap-3">
           <Star size={16} className="text-gold shrink-0" />
           <div>
@@ -188,23 +271,29 @@ export default function PostMatchStats() {
 
       {/* Actions */}
       <Link
-        href="/home"
+        href="/play"
         className="block w-full h-[44px] leading-[44px] text-center bg-accent text-black font-mono text-sm uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100"
       >
-        Back to Home
+        Play Again
       </Link>
       <div className="flex gap-2">
+        <Link
+          href="/home"
+          className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
+        >
+          Home
+        </Link>
+        <Link
+          href="/club/squad"
+          className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
+        >
+          View Squad
+        </Link>
         <Link
           href="/club/tactics"
           className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
         >
           Tactics
-        </Link>
-        <Link
-          href="/play"
-          className="flex-1 block h-10 leading-[40px] text-center border border-accent/40 text-accent font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-accent transition-colors duration-100"
-        >
-          Play Again
         </Link>
       </div>
       {saving && (

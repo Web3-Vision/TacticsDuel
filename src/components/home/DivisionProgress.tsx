@@ -1,6 +1,11 @@
 import { cn } from "@/lib/utils";
 import type { Profile, Division } from "@/lib/types";
 
+interface Last5Entry {
+  result: string;
+  score: string;
+}
+
 interface DivisionProgressProps {
   profile: {
     division_points: number;
@@ -10,7 +15,7 @@ interface DivisionProgressProps {
     elo_rating: number;
   };
   division: Division | null;
-  last5: string[];
+  last5: Last5Entry[];
 }
 
 export default function DivisionProgress({
@@ -47,17 +52,18 @@ export default function DivisionProgress({
       <div className="flex items-center gap-2 mt-2">
         {last5.length > 0 && (
           <div className="flex gap-1">
-            {last5.map((r, i) => (
+            {last5.map((entry, i) => (
               <div
                 key={i}
+                title={entry.score}
                 className={cn(
-                  "w-4 h-4 rounded-sm flex items-center justify-center font-mono text-[8px] font-semibold",
-                  r === "W" && "bg-win/20 text-win",
-                  r === "D" && "bg-draw/20 text-draw",
-                  r === "L" && "bg-loss/20 text-loss"
+                  "w-4 h-4 rounded-sm flex items-center justify-center font-mono text-[8px] font-semibold cursor-default",
+                  entry.result === "W" && "bg-win/20 text-win",
+                  entry.result === "D" && "bg-draw/20 text-draw",
+                  entry.result === "L" && "bg-loss/20 text-loss"
                 )}
               >
-                {r}
+                {entry.result}
               </div>
             ))}
           </div>
