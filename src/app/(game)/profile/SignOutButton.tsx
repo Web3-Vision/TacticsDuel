@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { getMagic } from "@/lib/magic/client";
 import { useRouter } from "next/navigation";
 
 export default function SignOutButton() {
@@ -8,6 +9,14 @@ export default function SignOutButton() {
   const router = useRouter();
 
   async function handleSignOut() {
+    try {
+      const magic = getMagic();
+      if (await magic.user.isLoggedIn()) {
+        await magic.user.logout();
+      }
+    } catch {
+      // Magic logout failed, continue with Supabase logout
+    }
     await supabase.auth.signOut();
     router.push("/login");
   }

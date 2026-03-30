@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getMagic } from "@/lib/magic/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -10,7 +11,6 @@ export default function SignupPage() {
   const [username, setUsername] = useState("");
   const [clubName, setClubName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const supabase = createClient();
   const router = useRouter();
@@ -32,23 +32,56 @@ export default function SignupPage() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: {
-          username,
-          club_name: clubName,
-        },
-      },
-    });
+    try {
+      const magic = getMagic();
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSent(true);
+      // Authenticate with Magic (email OTP)
+      const didToken = await magic.auth.loginWithEmailOTP({ email });
+
+      if (!didToken) {
+        setError("Magic authentication failed");
+        setLoading(false);
+        return;
+      }
+
+      // Send DID token + profile data to bridge API
+      const res = await fetch("/api/auth/magic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ didToken, username, clubName }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Signup failed");
+        setLoading(false);
+        return;
+      }
+
+      // Establish Supabase session via the verification link
+      if (data.verificationUrl) {
+        const url = new URL(data.verificationUrl);
+        const token_hash = url.searchParams.get("token") || data.hashedToken;
+        const type = url.searchParams.get("type") || "magiclink";
+
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: token_hash!,
+          type: type as "magiclink",
+        });
+
+        if (verifyError) {
+          setError(verifyError.message);
+          setLoading(false);
+          return;
+        }
+      }
+
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Signup failed");
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function handleGoogle() {
@@ -75,67 +108,56 @@ export default function SignupPage() {
           Pick a name and start competing
         </p>
 
-        {sent ? (
-          <div className="bg-surface border border-border rounded-md p-4">
-            <p className="font-mono text-sm text-accent">Check your email</p>
-            <p className="text-text-mid text-xs mt-2">
-              We sent a signup link to {email}
-            </p>
-          </div>
-        ) : (
-          <>
-            <form onSubmit={handleSignup} className="flex flex-col gap-3">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username"
-                required
-                maxLength={20}
-                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
-              />
-              <input
-                type="text"
-                value={clubName}
-                onChange={(e) => setClubName(e.target.value)}
-                placeholder="Club name (e.g. FC Thunder)"
-                required
-                maxLength={30}
-                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
-              />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
-                required
-                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-[44px] bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
-              >
-                {loading ? "Creating..." : "Create Club"}
-              </button>
-            </form>
+        <form onSubmit={handleSignup} className="flex flex-col gap-3">
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            required
+            maxLength={20}
+            className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+          />
+          <input
+            type="text"
+            value={clubName}
+            onChange={(e) => setClubName(e.target.value)}
+            placeholder="Club name (e.g. FC Thunder)"
+            required
+            maxLength={30}
+            className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
+            required
+            className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-[44px] bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
+          >
+            {loading ? "Creating..." : "Create Club"}
+          </button>
+        </form>
 
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-text-dim text-xs font-mono uppercase">
-                or
-              </span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-text-dim text-xs font-mono uppercase">
+            or
+          </span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
 
-            <button
-              onClick={handleGoogle}
-              className="w-full h-[44px] bg-surface border border-border rounded-[4px] font-mono text-sm uppercase tracking-wide text-text hover:border-border-light transition-colors duration-100"
-            >
-              Sign up with Google
-            </button>
-          </>
-        )}
+        <button
+          onClick={handleGoogle}
+          className="w-full h-[44px] bg-surface border border-border rounded-[4px] font-mono text-sm uppercase tracking-wide text-text hover:border-border-light transition-colors duration-100"
+        >
+          Sign up with Google
+        </button>
 
         {error && (
           <p className="text-danger text-xs font-mono mt-3">{error}</p>
@@ -146,6 +168,10 @@ export default function SignupPage() {
           <Link href="/login" className="text-accent hover:underline">
             Log in
           </Link>
+        </p>
+
+        <p className="text-text-dim text-xs text-center mt-3 opacity-50">
+          Powered by Magic
         </p>
       </div>
     </div>

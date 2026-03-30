@@ -56,6 +56,12 @@ export default async function ProfilePage() {
           label="Member Since"
           value={new Date(profile.created_at).toLocaleDateString()}
         />
+        {profile.wallet_address && (
+          <StatCard
+            label="Wallet (Chiliz)"
+            value={`${profile.wallet_address.slice(0, 6)}...${profile.wallet_address.slice(-4)}`}
+          />
+        )}
       </div>
 
       <SignOutButton />
