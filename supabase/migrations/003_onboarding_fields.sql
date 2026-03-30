@@ -19,16 +19,23 @@ BEGIN
       user_id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
       formation text NOT NULL DEFAULT '4-3-3',
       player_ids jsonb NOT NULL DEFAULT '[]',
+      bench_ids jsonb NOT NULL DEFAULT '[]',
       captain_id text,
       total_cost int NOT NULL DEFAULT 0,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   ELSE
-    -- Just add captain_id if squads already has player_ids format
+    -- Add missing columns if squads already has player_ids format
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'squads')
-       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'squads' AND column_name = 'captain_id')
     THEN
-      ALTER TABLE public.squads ADD COLUMN captain_id text;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'squads' AND column_name = 'captain_id')
+      THEN
+        ALTER TABLE public.squads ADD COLUMN captain_id text;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'squads' AND column_name = 'bench_ids')
+      THEN
+        ALTER TABLE public.squads ADD COLUMN bench_ids jsonb NOT NULL DEFAULT '[]';
+      END IF;
     END IF;
   END IF;
 END $$;

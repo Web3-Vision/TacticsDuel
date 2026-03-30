@@ -10,7 +10,7 @@ export default function PitchView() {
   const formation = getFormation(formationId);
 
   return (
-    <div className="relative w-full aspect-[3/4] max-h-[240px] bg-pitch/20 border border-border rounded-md overflow-hidden">
+    <div className="relative w-full aspect-[3/4] max-h-[300px] bg-pitch/20 border border-border rounded-md overflow-hidden">
       {/* Pitch markings */}
       <svg
         viewBox="0 0 100 130"

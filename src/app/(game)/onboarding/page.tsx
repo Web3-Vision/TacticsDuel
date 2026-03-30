@@ -17,14 +17,14 @@ const TOP_CLUBS = [
   "Boca Juniors", "River Plate", "Other",
 ];
 
-// Position fill order: GK first, then defenders, midfielders, forwards
 const POSITION_ORDER: Position[] = ["GK", "CB", "LB", "RB", "CM", "LW", "RW", "ST"];
+
+const TOTAL_SQUAD_SIZE = 21; // 11 starters + 10 bench
 
 function getNextSuggestedSlot(
   slots: (Player | null)[],
   formation: ReturnType<typeof getFormation>
 ): number | null {
-  // Group slots by position priority
   const priorityOrder: Record<string, number> = {
     GK: 0, CB: 1, LB: 1, RB: 1, CM: 2, LW: 3, RW: 3, ST: 3,
   };
@@ -42,8 +42,8 @@ export default function OnboardingPage() {
   const [favoriteTeam, setFavoriteTeam] = useState("");
   const [age, setAge] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  // Player data (lazy loaded)
   const [players, setPlayers] = useState<Player[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -54,27 +54,33 @@ export default function OnboardingPage() {
     });
   }, []);
 
-  // Squad store
   const {
-    formationId, setFormation, slots, activeSlotIndex, setActiveSlot,
-    addPlayer, removePlayer, clearSquad, filledCount, totalSpent,
+    formationId, setFormation, slots, bench, activeSlotIndex, setActiveSlot,
+    addPlayer, removePlayer, addBenchPlayer, removeBenchPlayer, clearSquad,
+    filledCount, benchFilledCount, totalFilledCount, totalSpent,
     budgetRemaining, isPlayerInSquad, canAfford, captainId, setCaptain,
   } = useSquadStore();
 
   const formation = getFormation(formationId);
   const suggestedSlot = getNextSuggestedSlot(slots, formation);
   const suggestedPosition = suggestedSlot !== null ? formation.slots[suggestedSlot].position : null;
+  const startersFull = filledCount() >= 11;
 
-  // Search & filter for squad builder
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState<Position | "ALL">("ALL");
 
-  // When suggested slot changes, update the filter
   useEffect(() => {
-    if (step === 3 && suggestedPosition && posFilter === "ALL") {
+    if (step === 3 && suggestedPosition && posFilter === "ALL" && !startersFull) {
       setPosFilter(suggestedPosition);
     }
   }, [step, suggestedPosition]);
+
+  // When starters are full, reset filter to ALL for bench picking
+  useEffect(() => {
+    if (startersFull && step === 3) {
+      setPosFilter("ALL");
+    }
+  }, [startersFull]);
 
   const filteredPlayers = useMemo(() => {
     let list = players;
@@ -99,16 +105,19 @@ export default function OnboardingPage() {
     const priorityOrder: Record<string, number> = {
       GK: 0, CB: 1, LB: 1, RB: 1, CM: 2, LW: 3, RW: 3, ST: 3,
     };
+
+    // Fill starters first
     const emptySlots = formation.slots
       .map((slot, i) => ({ slot, i }))
       .filter(({ i }) => slots[i] === null)
       .sort((a, b) => (priorityOrder[a.slot.position] ?? 2) - (priorityOrder[b.slot.position] ?? 2));
 
-    let remainingSlots = emptySlots.length;
+    let remainingTotal = emptySlots.length + bench.filter((p) => p === null).length;
+
     emptySlots.forEach(({ slot, i }) => {
       const state = useSquadStore.getState();
       const remaining = state.budgetRemaining();
-      const targetPerSlot = remaining / remainingSlots;
+      const targetPerSlot = remaining / Math.max(1, remainingTotal);
       const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
       const available = sortedPlayers.find(
         (p) =>
@@ -118,19 +127,42 @@ export default function OnboardingPage() {
       );
       if (available) {
         state.addPlayer(i, available);
-        remainingSlots--;
+        remainingTotal--;
       }
     });
+
+    // Fill bench
+    const state = useSquadStore.getState();
+    const emptyBenchCount = state.bench.filter((p) => p === null).length;
+    for (let b = 0; b < emptyBenchCount; b++) {
+      const currentState = useSquadStore.getState();
+      const remaining = currentState.budgetRemaining();
+      const benchEmpty = currentState.bench.filter((p) => p === null).length;
+      const targetPerSlot = remaining / Math.max(1, benchEmpty);
+      const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
+      const available = sortedPlayers.find(
+        (p) =>
+          !currentState.isPlayerInSquad(p.id) &&
+          p.marketValue <= maxSpend
+      );
+      if (available) {
+        currentState.addBenchPlayer(available);
+      }
+    }
   }
 
   function handleSelectPlayer(player: Player) {
-    // Add to suggested slot or first matching empty slot
+    if (startersFull) {
+      // Add to bench
+      addBenchPlayer(player);
+      return;
+    }
+
     const targetSlot = activeSlotIndex ?? suggestedSlot;
     if (targetSlot !== null) {
       addPlayer(targetSlot, player);
       setActiveSlot(null);
     } else {
-      // Find any empty slot matching position
       const emptyIdx = formation.slots.findIndex(
         (s, i) => s.position === player.position && slots[i] === null
       );
@@ -140,12 +172,11 @@ export default function OnboardingPage() {
 
   async function handleFinish() {
     setSaving(true);
+    setSaveError("");
     try {
-      // Save squad
       await useSquadStore.getState().saveToSupabase();
 
-      // Update profile
-      await fetch("/api/profile", {
+      const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -156,11 +187,23 @@ export default function OnboardingPage() {
         }),
       });
 
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save profile");
+      }
+
       router.push("/dashboard");
-    } catch {
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
       setSaving(false);
     }
   }
+
+  // All players for captain selection
+  const allSquadPlayers = [
+    ...slots.map((p, i) => p ? { player: p, label: formation.slots[i].label, type: "Starter" as const } : null),
+    ...bench.map((p, i) => p ? { player: p, label: `Sub ${i + 1}`, type: "Bench" as const } : null),
+  ].filter(Boolean) as { player: Player; label: string; type: "Starter" | "Bench" }[];
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-7rem)]">
@@ -255,9 +298,7 @@ export default function OnboardingPage() {
             {FORMATIONS.map((f) => (
               <button
                 key={f.id}
-                onClick={() => {
-                  setFormation(f.id);
-                }}
+                onClick={() => setFormation(f.id)}
                 className={cn(
                   "relative border rounded-md p-3 transition-colors duration-100",
                   formationId === f.id
@@ -265,7 +306,6 @@ export default function OnboardingPage() {
                     : "border-border hover:border-border-light"
                 )}
               >
-                {/* Mini pitch visualization */}
                 <div className="relative w-full aspect-[3/4] mb-2">
                   {f.slots.map((slot, i) => (
                     <div
@@ -310,14 +350,17 @@ export default function OnboardingPage() {
 
       {/* Step 3: Build Squad */}
       {step === 3 && (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 relative">
           <div className="px-4 py-2 border-b border-border">
             <h2 className="font-mono text-sm font-semibold tracking-wider uppercase">
-              Build Your Squad
+              {startersFull ? "Pick Bench Players" : "Build Your Squad"}
             </h2>
             <p className="text-text-dim text-xs">
-              {filledCount()}/11 players selected
-              {suggestedPosition && filledCount() < 11 && (
+              {startersFull
+                ? `${benchFilledCount()}/10 bench selected (${totalFilledCount()}/21 total)`
+                : `${filledCount()}/11 starters selected`
+              }
+              {!startersFull && suggestedPosition && filledCount() < 11 && (
                 <> — Pick a <span className="text-accent">{suggestedPosition}</span></>
               )}
             </p>
@@ -329,9 +372,9 @@ export default function OnboardingPage() {
               <span className="font-mono text-xs text-text-dim">
                 {formatPrice(budgetRemaining())} left
               </span>
-              {filledCount() < 11 && (
+              {totalFilledCount() < TOTAL_SQUAD_SIZE && (
                 <span className="font-mono text-xs text-text-dim">
-                  ~{formatPrice(Math.round(budgetRemaining() / Math.max(1, 11 - filledCount())))}/slot
+                  ~{formatPrice(Math.round(budgetRemaining() / Math.max(1, TOTAL_SQUAD_SIZE - totalFilledCount())))}/slot
                 </span>
               )}
             </div>
@@ -346,9 +389,9 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          {/* Mini pitch */}
+          {/* Pitch — larger */}
           <div className="px-4 py-2">
-            <div className="relative w-full aspect-[3/2] max-h-[160px] bg-pitch/20 border border-border rounded-md overflow-hidden">
+            <div className="relative w-full aspect-[3/2] max-h-[240px] bg-pitch/20 border border-border rounded-md overflow-hidden">
               {formation.slots.map((slot, i) => {
                 const player = slots[i];
                 const isSuggested = i === suggestedSlot && !player;
@@ -358,6 +401,7 @@ export default function OnboardingPage() {
                   <button
                     key={i}
                     onClick={() => {
+                      if (startersFull && player) return;
                       setActiveSlot(isActive ? null : i);
                       if (!isActive && !player) {
                         setPosFilter(slot.position);
@@ -371,7 +415,7 @@ export default function OnboardingPage() {
                   >
                     <div
                       className={cn(
-                        "w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-mono font-medium border",
+                        "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-mono font-medium border",
                         player
                           ? "bg-accent/20 border-accent text-accent"
                           : isSuggested
@@ -383,7 +427,7 @@ export default function OnboardingPage() {
                     >
                       {player ? player.overall : slot.label}
                     </div>
-                    <span className="font-mono text-[8px] text-text-mid truncate max-w-[48px]">
+                    <span className="font-mono text-[8px] text-text-mid truncate max-w-[56px]">
                       {player ? player.name.split(" ").pop() : ""}
                     </span>
                   </button>
@@ -392,11 +436,46 @@ export default function OnboardingPage() {
             </div>
           </div>
 
+          {/* Bench display (when starters are full) */}
+          {startersFull && (
+            <div className="px-4 py-1.5 border-b border-border">
+              <p className="font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                Bench ({benchFilledCount()}/10)
+              </p>
+              <div className="flex gap-1 flex-wrap">
+                {bench.map((p, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "h-6 px-2 rounded-sm flex items-center gap-1 font-mono text-[10px] border",
+                      p ? "border-accent/50 text-accent bg-accent/5" : "border-border text-text-dim"
+                    )}
+                  >
+                    {p ? (
+                      <>
+                        <span>{p.overall}</span>
+                        <span className="truncate max-w-[60px]">{p.name}</span>
+                        <button
+                          onClick={() => removeBenchPlayer(i)}
+                          className="text-text-dim hover:text-danger ml-0.5"
+                        >
+                          x
+                        </button>
+                      </>
+                    ) : (
+                      <span>Empty</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Actions row */}
           <div className="flex gap-2 px-4 py-1.5">
             <button
               onClick={handleAutoFill}
-              disabled={filledCount() === 11}
+              disabled={totalFilledCount() === TOTAL_SQUAD_SIZE}
               className="flex-1 h-8 border border-border text-text-mid font-mono text-[10px] uppercase tracking-wide rounded-[4px] hover:border-accent hover:text-accent transition-colors duration-100 disabled:opacity-30"
             >
               Auto-Fill Remaining
@@ -419,9 +498,7 @@ export default function OnboardingPage() {
                   "shrink-0 h-7 px-2 rounded-[3px] font-mono text-[10px] uppercase tracking-wide border transition-colors duration-100",
                   posFilter === pos
                     ? "border-accent text-accent bg-accent/10"
-                    : pos === suggestedPosition && posFilter === "ALL"
-                      ? "border-accent/50 text-accent/70"
-                      : "border-border text-text-dim hover:border-border-light"
+                    : "border-border text-text-dim hover:border-border-light"
                 )}
               >
                 {pos}
@@ -441,7 +518,7 @@ export default function OnboardingPage() {
           </div>
 
           {/* Player list */}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="flex-1 overflow-y-auto min-h-0 pb-14">
             {filteredPlayers.length === 0 ? (
               <p className="text-text-dim text-xs text-center py-6">No players found.</p>
             ) : (
@@ -471,7 +548,6 @@ export default function OnboardingPage() {
                     <span className="font-mono text-[10px] text-text-dim uppercase w-6">
                       {player.position}
                     </span>
-                    <span className="text-xs">{player.nationality}</span>
                     <span className="flex-1 font-mono text-sm text-text truncate">
                       {player.name}
                     </span>
@@ -485,8 +561,8 @@ export default function OnboardingPage() {
             )}
           </div>
 
-          {/* Bottom nav */}
-          <div className="flex gap-2 px-4 py-3 border-t border-border bg-surface">
+          {/* Floating bottom nav */}
+          <div className="sticky bottom-0 z-10 flex gap-2 px-4 py-3 border-t border-border bg-bg">
             <button
               onClick={() => setStep(2)}
               className="flex-1 h-[40px] border border-border text-text-mid font-mono text-xs uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
@@ -495,10 +571,12 @@ export default function OnboardingPage() {
             </button>
             <button
               onClick={() => setStep(4)}
-              disabled={filledCount() < 11}
+              disabled={totalFilledCount() < TOTAL_SQUAD_SIZE}
               className="flex-1 h-[40px] bg-accent text-black font-mono text-xs font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-30"
             >
-              {filledCount() < 11 ? `${filledCount()}/11 Selected` : "Pick Captain"}
+              {totalFilledCount() < TOTAL_SQUAD_SIZE
+                ? `${totalFilledCount()}/${TOTAL_SQUAD_SIZE} Selected`
+                : "Pick Captain"}
             </button>
           </div>
         </div>
@@ -515,12 +593,11 @@ export default function OnboardingPage() {
           </p>
 
           <div className="flex flex-col gap-1.5 max-w-[400px] mx-auto w-full">
-            {slots.map((player, i) => {
-              if (!player) return null;
+            {allSquadPlayers.map(({ player, label, type }) => {
               const isCaptain = captainId === player.id;
               return (
                 <button
-                  key={i}
+                  key={player.id}
                   onClick={() => setCaptain(player.id)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 border rounded-md transition-colors duration-100",
@@ -538,7 +615,8 @@ export default function OnboardingPage() {
                   <div className="flex-1 text-left">
                     <span className="font-mono text-sm text-text">{player.name}</span>
                     <span className="block font-mono text-[10px] text-text-dim uppercase">
-                      {formation.slots[i].label} — {player.club}
+                      {label} — {player.club}
+                      {type === "Bench" && <span className="text-text-dim/60 ml-1">(Bench)</span>}
                     </span>
                   </div>
                   <span className="font-mono text-xs text-text-dim">{player.position}</span>
@@ -568,17 +646,17 @@ export default function OnboardingPage() {
       {/* Step 5: Ready */}
       {step === 5 && (
         <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-          <div className="w-16 h-16 rounded-full bg-accent/10 border-2 border-accent flex items-center justify-center mb-4">
-            <span className="text-2xl">⚽</span>
+          <div className="w-14 h-14 rounded-full bg-accent/10 border-2 border-accent flex items-center justify-center mb-4">
+            <span className="font-mono text-lg font-bold text-accent">OK</span>
           </div>
           <h2 className="font-mono text-xl font-semibold tracking-wider uppercase mb-1">
-            Squad Ready!
+            Squad Ready
           </h2>
           <p className="text-text-dim text-sm text-center mb-2">
-            {filledCount()} players selected — {formatPrice(totalSpent())} spent
+            {totalFilledCount()} players selected — {formatPrice(totalSpent())} spent
           </p>
           {captainId && (() => {
-            const captain = slots.find((p) => p?.id === captainId);
+            const captain = [...slots, ...bench].find((p) => p?.id === captainId);
             return captain ? (
               <p className="text-text-mid text-sm mb-6">
                 Captain: <span className="text-accent font-medium">{captain.name}</span>
@@ -586,8 +664,8 @@ export default function OnboardingPage() {
             ) : null;
           })()}
 
-          {/* Mini pitch preview */}
-          <div className="relative w-full max-w-[300px] aspect-[3/4] max-h-[200px] bg-pitch/20 border border-border rounded-md overflow-hidden mb-6">
+          {/* Larger pitch preview */}
+          <div className="relative w-full max-w-[380px] aspect-[3/4] max-h-[280px] bg-pitch/20 border border-border rounded-md overflow-hidden mb-6">
             {formation.slots.map((slot, i) => {
               const player = slots[i];
               const isCaptain = player && captainId === player.id;
@@ -601,7 +679,7 @@ export default function OnboardingPage() {
                   }}
                 >
                   <div className={cn(
-                    "w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-mono font-medium border",
+                    "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-mono font-medium border",
                     isCaptain
                       ? "bg-accent border-accent text-black"
                       : player
@@ -610,13 +688,36 @@ export default function OnboardingPage() {
                   )}>
                     {isCaptain ? "C" : player ? player.overall : slot.label}
                   </div>
-                  <span className="font-mono text-[8px] text-text-mid truncate max-w-[48px]">
+                  <span className="font-mono text-[8px] text-text-mid truncate max-w-[56px]">
                     {player ? player.name.split(" ").pop() : ""}
                   </span>
                 </div>
               );
             })}
           </div>
+
+          {/* Bench summary */}
+          {benchFilledCount() > 0 && (
+            <div className="w-full max-w-[380px] mb-4">
+              <p className="font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                Bench ({benchFilledCount()})
+              </p>
+              <div className="flex gap-1 flex-wrap">
+                {bench.filter(Boolean).map((p) => (
+                  <span
+                    key={p!.id}
+                    className="h-5 px-2 rounded-sm font-mono text-[10px] border border-border text-text-mid bg-surface flex items-center"
+                  >
+                    {p!.overall} {p!.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {saveError && (
+            <p className="text-danger text-xs font-mono mb-3 text-center max-w-[340px]">{saveError}</p>
+          )}
 
           <div className="flex flex-col gap-2 w-full max-w-[340px]">
             <button
@@ -628,6 +729,7 @@ export default function OnboardingPage() {
             </button>
             <button
               onClick={() => setStep(4)}
+              disabled={saving}
               className="font-mono text-xs text-text-dim hover:text-text-mid transition-colors"
             >
               Go Back

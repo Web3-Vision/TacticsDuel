@@ -4,9 +4,12 @@ import { SALARY_CAP } from "../utils";
 import { getFormation } from "../data/formations";
 import { getPlayerById } from "../data/players";
 
+const BENCH_SIZE = 10;
+
 interface SquadState {
   formationId: string;
   slots: (Player | null)[];
+  bench: (Player | null)[];
   activeSlotIndex: number | null;
   captainId: string | null;
 
@@ -14,6 +17,8 @@ interface SquadState {
   setActiveSlot: (index: number | null) => void;
   addPlayer: (slotIndex: number, player: Player) => void;
   removePlayer: (slotIndex: number) => void;
+  addBenchPlayer: (player: Player) => void;
+  removeBenchPlayer: (index: number) => void;
   clearSquad: () => void;
   setCaptain: (playerId: string | null) => void;
   loadSquad: (formationId: string, slots: (Player | null)[]) => void;
@@ -24,6 +29,8 @@ interface SquadState {
   totalSpent: () => number;
   budgetRemaining: () => number;
   filledCount: () => number;
+  benchFilledCount: () => number;
+  totalFilledCount: () => number;
   emptySlotCount: () => number;
   avgBudgetPerSlot: () => number;
   positionForSlot: (index: number) => Position;
@@ -34,11 +41,12 @@ interface SquadState {
 export const useSquadStore = create<SquadState>((set, get) => ({
   formationId: "4-3-3",
   slots: Array(11).fill(null),
+  bench: Array(BENCH_SIZE).fill(null),
   activeSlotIndex: null,
   captainId: null,
 
   setFormation: (id) => {
-    set({ formationId: id, slots: Array(11).fill(null), activeSlotIndex: null, captainId: null });
+    set({ formationId: id, slots: Array(11).fill(null), bench: Array(BENCH_SIZE).fill(null), activeSlotIndex: null, captainId: null });
   },
 
   setActiveSlot: (index) => set({ activeSlotIndex: index }),
@@ -59,7 +67,25 @@ export const useSquadStore = create<SquadState>((set, get) => ({
     set({ slots: newSlots });
   },
 
-  clearSquad: () => set({ slots: Array(11).fill(null), activeSlotIndex: null, captainId: null }),
+  addBenchPlayer: (player) => {
+    const state = get();
+    if (!state.canAfford(player)) return;
+    if (state.isPlayerInSquad(player.id)) return;
+
+    const newBench = [...state.bench];
+    const emptyIdx = newBench.findIndex((p) => p === null);
+    if (emptyIdx === -1) return;
+    newBench[emptyIdx] = player;
+    set({ bench: newBench });
+  },
+
+  removeBenchPlayer: (index) => {
+    const newBench = [...get().bench];
+    newBench[index] = null;
+    set({ bench: newBench });
+  },
+
+  clearSquad: () => set({ slots: Array(11).fill(null), bench: Array(BENCH_SIZE).fill(null), activeSlotIndex: null, captainId: null }),
 
   setCaptain: (playerId) => set({ captainId: playerId }),
 
@@ -69,19 +95,31 @@ export const useSquadStore = create<SquadState>((set, get) => ({
     const { createClient } = await import("../supabase/client");
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) throw new Error("Not authenticated");
 
     const state = get();
     const playerIds = state.slots.map((p) => p?.id ?? null);
+    const benchIds = state.bench.map((p) => p?.id ?? null);
 
-    await supabase.from("squads").upsert({
+    const row = {
       user_id: user.id,
       formation: state.formationId,
       player_ids: playerIds,
+      bench_ids: benchIds,
       captain_id: state.captainId,
       total_cost: state.totalSpent(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
+    };
+
+    // Try upsert first
+    const { error } = await supabase.from("squads").upsert(row, { onConflict: "user_id" });
+
+    if (error) {
+      // Fallback: delete existing + insert fresh
+      await supabase.from("squads").delete().eq("user_id", user.id);
+      const { error: insertError } = await supabase.from("squads").insert(row);
+      if (insertError) throw new Error(insertError.message);
+    }
   },
 
   loadFromSupabase: async () => {
@@ -92,34 +130,43 @@ export const useSquadStore = create<SquadState>((set, get) => ({
 
     const { data } = await supabase
       .from("squads")
-      .select("formation, player_ids, captain_id")
+      .select("formation, player_ids, bench_ids, captain_id")
       .eq("user_id", user.id)
       .single();
 
     if (!data) return;
 
-    const playerIds = data.player_ids as (string | null)[];
+    const playerIds = (data.player_ids as (string | null)[]) ?? [];
+    const benchIds = (data.bench_ids as (string | null)[]) ?? [];
     const slots = playerIds.map((id) => (id ? getPlayerById(id) ?? null : null));
-    set({ formationId: data.formation, slots, captainId: data.captain_id ?? null });
+    const bench = benchIds.map((id) => (id ? getPlayerById(id) ?? null : null));
+    // Pad bench to BENCH_SIZE
+    while (bench.length < BENCH_SIZE) bench.push(null);
+
+    set({ formationId: data.formation, slots, bench, captainId: data.captain_id ?? null });
   },
 
   totalSpent: () => {
-    return get().slots.reduce(
-      (sum, p) => sum + (p?.marketValue ?? 0),
-      0
-    );
+    const state = get();
+    const starterCost = state.slots.reduce((sum, p) => sum + (p?.marketValue ?? 0), 0);
+    const benchCost = state.bench.reduce((sum, p) => sum + (p?.marketValue ?? 0), 0);
+    return starterCost + benchCost;
   },
 
   budgetRemaining: () => SALARY_CAP - get().totalSpent(),
 
   filledCount: () => get().slots.filter((p) => p !== null).length,
 
+  benchFilledCount: () => get().bench.filter((p) => p !== null).length,
+
+  totalFilledCount: () => get().filledCount() + get().benchFilledCount(),
+
   emptySlotCount: () => get().slots.filter((p) => p === null).length,
 
   avgBudgetPerSlot: () => {
-    const empty = get().emptySlotCount();
-    if (empty === 0) return 0;
-    return Math.round(get().budgetRemaining() / empty);
+    const totalEmpty = get().emptySlotCount() + get().bench.filter((p) => p === null).length;
+    if (totalEmpty === 0) return 0;
+    return Math.round(get().budgetRemaining() / totalEmpty);
   },
 
   positionForSlot: (index) => {
@@ -128,7 +175,8 @@ export const useSquadStore = create<SquadState>((set, get) => ({
   },
 
   isPlayerInSquad: (playerId) => {
-    return get().slots.some((p) => p?.id === playerId);
+    const state = get();
+    return state.slots.some((p) => p?.id === playerId) || state.bench.some((p) => p?.id === playerId);
   },
 
   canAfford: (player) => {
