@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { cn, formatPrice, positionColor } from "@/lib/utils";
 import PlayerDetail from "@/components/squad/PlayerDetail";
@@ -41,14 +41,24 @@ export default function TransfersPage() {
   const [posFilter, setPosFilter] = useState<Position | "ALL">("ALL");
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | string>("");
 
   useEffect(() => {
     import("@/lib/data/players").then((mod) => {
       setAllPlayers(mod.PLAYERS);
       setLoaded(true);
     });
+  }, []);
+
+  const autoSave = useCallback(async () => {
+    setSaveStatus("saving");
+    try {
+      await useSquadStore.getState().saveToSupabase();
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (e: unknown) {
+      setSaveStatus(e instanceof Error ? e.message : "Save failed");
+    }
   }, []);
 
   // Owned players = starters + bench
@@ -78,6 +88,7 @@ export default function TransfersPage() {
     } else {
       addBenchPlayer(player);
     }
+    autoSave();
   }
 
   function handleSell(source: "starter" | "bench", index: number) {
@@ -86,20 +97,7 @@ export default function TransfersPage() {
     } else {
       removeBenchPlayer(index);
     }
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    setSaveMsg("");
-    try {
-      await useSquadStore.getState().saveToSupabase();
-      setSaveMsg("Saved!");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } catch (e: unknown) {
-      setSaveMsg(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
+    autoSave();
   }
 
   return (
@@ -156,9 +154,9 @@ export default function TransfersPage() {
         {tab === "market" ? (
           !loaded ? (
             <div className="py-4">
-              <div className="h-3 bg-border rounded-sm w-32 mb-2" />
-              <div className="h-3 bg-border rounded-sm w-48 mb-2" />
-              <div className="h-3 bg-border rounded-sm w-40" />
+              <div className="h-3 bg-border rounded-sm w-32 mb-2 animate-pulse" />
+              <div className="h-3 bg-border rounded-sm w-48 mb-2 animate-pulse" />
+              <div className="h-3 bg-border rounded-sm w-40 animate-pulse" />
             </div>
           ) : filteredMarket.length === 0 ? (
             <p className="font-mono text-xs text-text-dim py-4">No players available.</p>
@@ -260,18 +258,22 @@ export default function TransfersPage() {
           <span className="font-mono text-xs text-text-mid">
             {filledCount()}/11 + {benchFilledCount()}/10
           </span>
-          {saveMsg && (
-            <span className={cn("font-mono text-[10px]", saveMsg === "Saved!" ? "text-accent" : "text-danger")}>
-              {saveMsg}
-            </span>
+          {saveStatus === "saving" && (
+            <span className="font-mono text-[10px] text-text-dim">Saving...</span>
+          )}
+          {saveStatus === "saved" && (
+            <span className="font-mono text-[10px] text-accent">Saved</span>
+          )}
+          {saveStatus && saveStatus !== "saving" && saveStatus !== "saved" && (
+            <span className="font-mono text-[10px] text-danger">{saveStatus}</span>
           )}
         </div>
         <button
-          onClick={handleSave}
-          disabled={saving}
+          onClick={autoSave}
+          disabled={saveStatus === "saving"}
           className="h-8 px-4 bg-accent text-black font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save"}
+          {saveStatus === "saving" ? "Saving..." : "Save"}
         </button>
       </div>
 

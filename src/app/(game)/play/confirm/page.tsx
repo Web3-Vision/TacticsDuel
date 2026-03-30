@@ -11,6 +11,14 @@ import { getFormation } from "@/lib/data/formations";
 import PitchView from "@/components/pitch/PitchView";
 import type { Player, Tactics } from "@/lib/types";
 
+const DEFAULT_TACTICS: Tactics = {
+  formation: "4-3-3",
+  mentality: "Balanced",
+  tempo: "Normal",
+  pressing: "Medium",
+  width: "Normal",
+};
+
 export default function PreMatchConfirmPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -21,10 +29,42 @@ export default function PreMatchConfirmPage() {
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tactics, setTactics] = useState<Tactics>(DEFAULT_TACTICS);
 
   useEffect(() => {
     import("@/lib/data/players").then((mod) => setPlayers(mod.PLAYERS));
   }, []);
+
+  // Load saved tactics from Supabase
+  useEffect(() => {
+    async function loadTactics() {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from("tactics")
+          .select("mentality, tempo, pressing, width")
+          .eq("user_id", user.id)
+          .single();
+
+        if (data) {
+          setTactics({
+            formation: formationId,
+            mentality: data.mentality ?? "Balanced",
+            tempo: data.tempo ?? "Normal",
+            pressing: data.pressing ?? "Medium",
+            width: data.width ?? "Normal",
+          });
+        }
+      } catch {
+        // Use defaults on error
+      }
+    }
+    loadTactics();
+  }, [formationId]);
 
   const squadReady = filledCount() >= 11;
   const formation = getFormation(formationId);
@@ -36,11 +76,8 @@ export default function PreMatchConfirmPage() {
     const positions = formation.slots.map((s) => s.position);
     const homeSquad = slots.filter((p): p is Player => p !== null);
     const homeTactics: Tactics = {
+      ...tactics,
       formation: formationId,
-      mentality: "Balanced",
-      tempo: "Normal",
-      pressing: "Medium",
-      width: "Normal",
     };
 
     if (mode === "ai") {
@@ -111,10 +148,10 @@ export default function PreMatchConfirmPage() {
         </span>
         <div className="flex gap-2 flex-wrap">
           {[
-            { label: "Mentality", value: "Balanced" },
-            { label: "Tempo", value: "Normal" },
-            { label: "Pressing", value: "Medium" },
-            { label: "Width", value: "Normal" },
+            { label: "Mentality", value: tactics.mentality },
+            { label: "Tempo", value: tactics.tempo },
+            { label: "Pressing", value: tactics.pressing },
+            { label: "Width", value: tactics.width },
           ].map((t) => (
             <div
               key={t.label}

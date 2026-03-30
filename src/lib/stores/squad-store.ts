@@ -12,6 +12,7 @@ interface SquadState {
   bench: (Player | null)[];
   activeSlotIndex: number | null;
   captainId: string | null;
+  squadLoaded: boolean;
 
   setFormation: (id: string) => void;
   setActiveSlot: (index: number | null) => void;
@@ -44,6 +45,7 @@ export const useSquadStore = create<SquadState>((set, get) => ({
   bench: Array(BENCH_SIZE).fill(null),
   activeSlotIndex: null,
   captainId: null,
+  squadLoaded: false,
 
   setFormation: (id) => {
     set({ formationId: id, slots: Array(11).fill(null), bench: Array(BENCH_SIZE).fill(null), activeSlotIndex: null, captainId: null });
@@ -115,18 +117,31 @@ export const useSquadStore = create<SquadState>((set, get) => ({
     const { error } = await supabase.from("squads").upsert(row, { onConflict: "user_id" });
 
     if (error) {
+      console.error("[squad-store] upsert failed:", error.message);
       // Fallback: delete existing + insert fresh
-      await supabase.from("squads").delete().eq("user_id", user.id);
+      const { error: delError } = await supabase.from("squads").delete().eq("user_id", user.id);
+      if (delError) console.error("[squad-store] delete failed:", delError.message);
       const { error: insertError } = await supabase.from("squads").insert(row);
-      if (insertError) throw new Error(insertError.message);
+      if (insertError) throw new Error(`Save failed: ${error.message} → ${insertError.message}`);
     }
+
+    // Verify save
+    const { data: check } = await supabase
+      .from("squads")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .single();
+    if (!check) throw new Error("Save appeared to succeed but data was not found");
   },
 
   loadFromSupabase: async () => {
     const { createClient } = await import("../supabase/client");
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      set({ squadLoaded: true });
+      return;
+    }
 
     const { data } = await supabase
       .from("squads")
@@ -134,7 +149,10 @@ export const useSquadStore = create<SquadState>((set, get) => ({
       .eq("user_id", user.id)
       .single();
 
-    if (!data) return;
+    if (!data) {
+      set({ squadLoaded: true });
+      return;
+    }
 
     const playerIds = (data.player_ids as (string | null)[]) ?? [];
     const benchIds = (data.bench_ids as (string | null)[]) ?? [];
@@ -143,7 +161,7 @@ export const useSquadStore = create<SquadState>((set, get) => ({
     // Pad bench to BENCH_SIZE
     while (bench.length < BENCH_SIZE) bench.push(null);
 
-    set({ formationId: data.formation, slots, bench, captainId: data.captain_id ?? null });
+    set({ formationId: data.formation, slots, bench, captainId: data.captain_id ?? null, squadLoaded: true });
   },
 
   totalSpent: () => {

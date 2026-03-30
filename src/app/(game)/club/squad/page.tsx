@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { getFormation } from "@/lib/data/formations";
 import { FORMATIONS } from "@/lib/data/formations";
@@ -17,14 +17,11 @@ export default function SquadPage() {
     setFormation,
     slots,
     bench,
-    activeSlotIndex,
-    setActiveSlot,
     removePlayer,
     removeBenchPlayer,
     clearSquad,
     filledCount,
     benchFilledCount,
-    totalSpent,
     isPlayerInSquad,
   } = useSquadStore();
 
@@ -32,17 +29,29 @@ export default function SquadPage() {
   const [detailSource, setDetailSource] = useState<"starter" | "bench" | null>(null);
   const [detailIndex, setDetailIndex] = useState<number>(-1);
   const [showDetail, setShowDetail] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | string>("");
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playersLoaded, setPlayersLoaded] = useState(false);
+
+  useEffect(() => {
+    import("@/lib/data/players").then((mod) => {
+      setPlayers(mod.PLAYERS);
+      setPlayersLoaded(true);
+    });
+  }, []);
 
   const formation = getFormation(formationId);
 
-  function handleStarterTap(player: Player, index: number) {
-    setDetailPlayer(player);
-    setDetailSource("starter");
-    setDetailIndex(index);
-    setShowDetail(true);
-  }
+  const autoSave = useCallback(async () => {
+    setSaveStatus("saving");
+    try {
+      await useSquadStore.getState().saveToSupabase();
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (e: unknown) {
+      setSaveStatus(e instanceof Error ? e.message : "Save failed");
+    }
+  }, []);
 
   function handleBenchTap(player: Player, index: number) {
     setDetailPlayer(player);
@@ -60,20 +69,75 @@ export default function SquadPage() {
     }
     setShowDetail(false);
     setDetailPlayer(null);
+    autoSave();
   }
 
-  async function handleSave() {
-    setSaving(true);
-    setSaveMsg("");
-    try {
-      await useSquadStore.getState().saveToSupabase();
-      setSaveMsg("Saved!");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } catch (e: unknown) {
-      setSaveMsg(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSaving(false);
+  function handleClear() {
+    clearSquad();
+    autoSave();
+  }
+
+  function handleFormationChange(id: string) {
+    setFormation(id);
+    autoSave();
+  }
+
+  function handleAutoFill() {
+    if (!playersLoaded) return;
+    const sortedPlayers = [...players].sort((a, b) => b.overall - a.overall);
+    const priorityOrder: Record<string, number> = {
+      GK: 0, CB: 1, LB: 1, RB: 1, CM: 2, LW: 3, RW: 3, ST: 3,
+    };
+
+    // Fill starters first
+    const emptySlots = formation.slots
+      .map((slot, i) => ({ slot, i }))
+      .filter(({ i }) => useSquadStore.getState().slots[i] === null)
+      .sort((a, b) => (priorityOrder[a.slot.position] ?? 2) - (priorityOrder[b.slot.position] ?? 2));
+
+    const emptyBenchCount = useSquadStore.getState().bench.filter((p) => p === null).length;
+    let remainingTotal = emptySlots.length + emptyBenchCount;
+
+    // Fill starters
+    emptySlots.forEach(({ slot, i }) => {
+      const state = useSquadStore.getState();
+      const remaining = state.budgetRemaining();
+      const targetPerSlot = remaining / Math.max(1, remainingTotal);
+      const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
+      const available = sortedPlayers.find(
+        (p) =>
+          p.position === slot.position &&
+          !state.isPlayerInSquad(p.id) &&
+          p.marketValue <= maxSpend
+      );
+      if (available) {
+        state.addPlayer(i, available);
+        remainingTotal--;
+      }
+    });
+
+    // Fill bench
+    const positions = ["GK", "CB", "LB", "RB", "CM", "LW", "RW", "ST"];
+    for (const pos of positions) {
+      const state = useSquadStore.getState();
+      const emptyBench = state.bench.findIndex((p) => p === null);
+      if (emptyBench === -1) break;
+      const remaining = state.budgetRemaining();
+      const emptyCount = state.bench.filter((p) => p === null).length;
+      const targetPerSlot = remaining / Math.max(1, emptyCount);
+      const maxSpend = Math.min(targetPerSlot * 1.5, remaining);
+      const available = sortedPlayers.find(
+        (p) =>
+          p.position === pos &&
+          !state.isPlayerInSquad(p.id) &&
+          p.marketValue <= maxSpend
+      );
+      if (available) {
+        state.addBenchPlayer(available);
+      }
     }
+
+    autoSave();
   }
 
   const benchPlayers = bench
@@ -87,7 +151,7 @@ export default function SquadPage() {
         {FORMATIONS.map((f) => (
           <button
             key={f.id}
-            onClick={() => setFormation(f.id)}
+            onClick={() => handleFormationChange(f.id)}
             className={cn(
               "shrink-0 h-8 px-3 rounded-[3px] font-mono text-[11px] uppercase tracking-wide border transition-colors duration-100",
               formationId === f.id
@@ -111,14 +175,21 @@ export default function SquadPage() {
       {/* Actions */}
       <div className="flex gap-2 px-4 pb-2">
         <button
-          onClick={clearSquad}
+          onClick={handleAutoFill}
+          disabled={!playersLoaded}
+          className="flex-1 h-9 border border-accent text-accent font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:bg-accent/10 transition-colors duration-100 disabled:opacity-40"
+        >
+          Auto-fill
+        </button>
+        <button
+          onClick={handleClear}
           className="flex-1 h-9 border border-border text-text-dim font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
         >
-          Clear Squad
+          Clear
         </button>
         <Link
           href="/club/players"
-          className="flex-1 h-9 border border-accent text-accent font-mono text-[11px] uppercase tracking-wide rounded-[4px] flex items-center justify-center hover:bg-accent/10 transition-colors duration-100"
+          className="flex-1 h-9 border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] flex items-center justify-center hover:border-border-light transition-colors duration-100"
         >
           Transfers
         </Link>
@@ -167,18 +238,22 @@ export default function SquadPage() {
           <span className="font-mono text-xs text-text-mid">
             {filledCount()}/11 + {benchFilledCount()}/10
           </span>
-          {saveMsg && (
-            <span className={cn("font-mono text-[10px]", saveMsg === "Saved!" ? "text-accent" : "text-danger")}>
-              {saveMsg}
-            </span>
+          {saveStatus === "saving" && (
+            <span className="font-mono text-[10px] text-text-dim">Saving...</span>
+          )}
+          {saveStatus === "saved" && (
+            <span className="font-mono text-[10px] text-accent">Saved</span>
+          )}
+          {saveStatus && saveStatus !== "saving" && saveStatus !== "saved" && (
+            <span className="font-mono text-[10px] text-danger">{saveStatus}</span>
           )}
         </div>
         <button
-          onClick={handleSave}
-          disabled={saving}
+          onClick={autoSave}
+          disabled={saveStatus === "saving"}
           className="h-8 px-4 bg-accent text-black font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save"}
+          {saveStatus === "saving" ? "Saving..." : "Save"}
         </button>
       </div>
 
