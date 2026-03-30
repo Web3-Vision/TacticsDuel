@@ -15,12 +15,14 @@ interface PlayerMarketProps {
   players: Player[];
   onSelectPlayer: (player: Player) => void;
   filterPosition?: Position | null;
+  disabled?: boolean;
 }
 
 export default function PlayerMarket({
   players,
   onSelectPlayer,
   filterPosition,
+  disabled,
 }: PlayerMarketProps) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState<Position | "ALL">(
@@ -45,6 +47,17 @@ export default function PlayerMarket({
     }
     return list.sort((a, b) => b.overall - a.overall);
   }, [players, posFilter, search]);
+
+  if (disabled) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-center">
+          <p className="font-mono text-xs text-text-dim uppercase tracking-wide">Squad Locked</p>
+          <p className="font-mono text-[10px] text-text-dim mt-1">Complete your ranked cycle to make transfers</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
