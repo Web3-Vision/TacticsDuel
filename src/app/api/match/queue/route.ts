@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
 import type { Tactics } from "@/lib/types";
+import { makeCompetitiveError, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
 
 // Ghost opponent generation (server-side, no client imports)
 function generateGhostTactics(): Tactics {
@@ -22,6 +23,21 @@ function generateGhostTactics(): Tactics {
 }
 
 const GHOST_WAIT_THRESHOLD = 30; // seconds before generating ghost
+
+function buildErrorResponse(code: Parameters<typeof makeCompetitiveError>[0], message: string, retryable = false) {
+  return { ok: false, error: makeCompetitiveError(code, message, retryable) };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getStarterCount(supabase: any, userId: string): Promise<number> {
+  const { count } = await supabase
+    .from("squads")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("is_starter", true);
+
+  return count ?? 0;
+}
 
 // POST: Join matchmaking queue
 export async function POST() {
@@ -49,20 +65,59 @@ export async function POST() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return respond({ error: "Unauthorized" }, 401);
+      return respond(buildErrorResponse("UNAUTHORIZED", "Unauthorized"), 401);
     }
 
     // Get profile
     const profileLookupStartedAt = Date.now();
     const { data: profile } = await supabase
       .from("profiles")
-      .select("*")
+      .select("elo_rating, division, squad_locked")
       .eq("id", user.id)
       .single();
     timings.profileLookupMs = Date.now() - profileLookupStartedAt;
 
     if (!profile) {
-      return respond({ error: "Profile not found" }, 404, { userId: user.id, ...timings }, "PROFILE_NOT_FOUND");
+      return respond(
+        buildErrorResponse("PROFILE_NOT_FOUND", "Profile not found"),
+        404,
+        { userId: user.id, ...timings },
+        "PROFILE_NOT_FOUND"
+      );
+    }
+
+    const readinessLookupStartedAt = Date.now();
+    const [starterCount, tacticsCheck] = await Promise.all([
+      getStarterCount(supabase, user.id),
+      supabase.from("tactics").select("user_id").eq("user_id", user.id).single(),
+    ]);
+    timings.readinessLookupMs = Date.now() - readinessLookupStartedAt;
+
+    if (starterCount < RANKED_MIN_STARTERS) {
+      return respond(
+        buildErrorResponse("SQUAD_NOT_READY", "You need 11 saved starters before joining ranked queue."),
+        422,
+        { userId: user.id, starterCount, ...timings },
+        "SQUAD_NOT_READY"
+      );
+    }
+
+    if (!tacticsCheck.data) {
+      return respond(
+        buildErrorResponse("TACTICS_NOT_READY", "Save your tactics before joining ranked queue."),
+        422,
+        { userId: user.id, ...timings },
+        "TACTICS_NOT_READY"
+      );
+    }
+
+    if (!profile.squad_locked) {
+      return respond(
+        buildErrorResponse("SQUAD_NOT_LOCKED", "Lock your squad before joining ranked queue."),
+        422,
+        { userId: user.id, ...timings },
+        "SQUAD_NOT_LOCKED"
+      );
     }
 
     // Check if already in queue
@@ -75,7 +130,12 @@ export async function POST() {
     timings.queueLookupMs = Date.now() - queueLookupStartedAt;
 
     if (existing) {
-      return respond({ error: "Already in queue" }, 409, { userId: user.id, ...timings }, "ALREADY_IN_QUEUE");
+      return respond(
+        buildErrorResponse("ALREADY_IN_QUEUE", "Already in queue", true),
+        409,
+        { userId: user.id, ...timings },
+        "ALREADY_IN_QUEUE"
+      );
     }
 
     // Add to queue
@@ -91,7 +151,7 @@ export async function POST() {
 
     if (insertError) {
       return respond(
-        { error: "Failed to join queue" },
+        buildErrorResponse("QUEUE_INSERT_FAILED", "Failed to join queue", true),
         500,
         { userId: user.id, ...timings },
         "QUEUE_INSERT_FAILED"
@@ -111,15 +171,21 @@ export async function POST() {
       });
     }
 
-    return respond({
-      queued: true,
-      matchFound: !!match,
-      matchId: match?.id ?? null,
-    }, 200, { userId: user.id, matchFound: Number(Boolean(match)), ...timings });
+    return respond(
+      {
+        ok: true,
+        status: match ? "match_found" : "queued",
+        queued: !match,
+        matchFound: !!match,
+        matchId: match?.id ?? null,
+      },
+      200,
+      { userId: user.id, matchFound: Number(Boolean(match)), ...timings }
+    );
   } catch (error) {
     console.error("Queue error:", error);
     return respond(
-      { error: "Internal server error" },
+      buildErrorResponse("INTERNAL_ERROR", "Internal server error", true),
       500,
       undefined,
       "INTERNAL_ERROR"
@@ -153,7 +219,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return respond({ error: "Unauthorized" }, 401);
+      return respond(buildErrorResponse("UNAUTHORIZED", "Unauthorized"), 401);
     }
 
     // Check if still in queue
@@ -180,13 +246,19 @@ export async function GET() {
 
       if (recentMatch) {
         return respond({
+          ok: true,
+          status: "match_found",
           inQueue: false,
           matchFound: true,
           matchId: recentMatch.id,
         }, 200, { userId: user.id, matchFound: 1, ...timings });
       }
 
-      return respond({ inQueue: false, matchFound: false }, 200, { userId: user.id, matchFound: 0, ...timings });
+      return respond(
+        { ok: true, status: "not_in_queue", inQueue: false, matchFound: false },
+        200,
+        { userId: user.id, matchFound: 0, ...timings }
+      );
     }
 
     const waitSeconds = Math.round(
@@ -213,6 +285,8 @@ export async function GET() {
 
     if (match) {
       return respond({
+        ok: true,
+        status: "match_found",
         inQueue: false,
         matchFound: true,
         matchId: match.id,
@@ -239,6 +313,8 @@ export async function GET() {
         // Remove from queue
         await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
         return respond({
+          ok: true,
+          status: "match_found",
           inQueue: false,
           matchFound: true,
           matchId: ghostMatch.id,
@@ -248,6 +324,8 @@ export async function GET() {
     }
 
     return respond({
+      ok: true,
+      status: "searching",
       inQueue: true,
       matchFound: false,
       waitTime: waitSeconds,
@@ -255,7 +333,7 @@ export async function GET() {
   } catch (error) {
     console.error("Queue check error:", error);
     return respond(
-      { error: "Internal server error" },
+      buildErrorResponse("INTERNAL_ERROR", "Internal server error", true),
       500,
       undefined,
       "INTERNAL_ERROR"
@@ -288,15 +366,15 @@ export async function DELETE() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return respond({ error: "Unauthorized" }, 401);
+      return respond(buildErrorResponse("UNAUTHORIZED", "Unauthorized"), 401);
     }
 
     await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
 
-    return respond({ success: true }, 200, { userId: user.id });
+    return respond({ ok: true, status: "not_in_queue", success: true }, 200, { userId: user.id });
   } catch {
     return respond(
-      { error: "Internal server error" },
+      buildErrorResponse("INTERNAL_ERROR", "Internal server error", true),
       500,
       undefined,
       "INTERNAL_ERROR"

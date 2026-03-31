@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { persistNarrativeArtifacts } from "@/lib/engine/narrative-pipeline";
+import type { MatchEvent, MatchStats } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +14,12 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { homeScore, awayScore, stats, events } = body;
+    const { homeScore, awayScore, stats, events } = body as {
+      homeScore?: number;
+      awayScore?: number;
+      stats?: MatchStats;
+      events?: MatchEvent[];
+    };
 
     if (homeScore === undefined || awayScore === undefined) {
       return NextResponse.json({ error: "Missing scores" }, { status: 400 });
@@ -46,6 +53,36 @@ export async function POST(request: Request) {
 
     if (matchError) {
       return NextResponse.json({ error: matchError.message }, { status: 500 });
+    }
+
+    if (match?.id) {
+      await persistNarrativeArtifacts(supabase, {
+        matchId: match.id,
+        matchType: "ai",
+        homeUserId: user.id,
+        awayUserId: null,
+        homeScore,
+        awayScore,
+        stats: stats ?? {
+          homePossession: 50,
+          awayPossession: 50,
+          homeShots: 0,
+          awayShots: 0,
+          homeOnTarget: 0,
+          awayOnTarget: 0,
+          homeCorners: 0,
+          awayCorners: 0,
+          homeFouls: 0,
+          awayFouls: 0,
+          homeYellowCards: 0,
+          awayYellowCards: 0,
+          homeRedCards: 0,
+          awayRedCards: 0,
+          homePassAccuracy: 0,
+          awayPassAccuracy: 0,
+        },
+        events: events ?? [],
+      });
     }
 
     // Update profile W/D/L and award coins

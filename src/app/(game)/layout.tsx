@@ -28,24 +28,23 @@ export default async function GameLayout({
   }
 
   return (
-    <div className="flex justify-center min-h-dvh">
+    <div className="app-shell-bg flex min-h-dvh justify-center">
       <SquadLoader />
       <ServiceWorkerRegistration />
 
-      {/* Left panel — desktop only */}
-      <aside className="hidden lg:block w-[280px] shrink-0 sticky top-12 h-[calc(100dvh-3rem)] overflow-y-auto border-r border-border bg-bg p-4">
+      <aside className="hidden h-[calc(100dvh-4rem)] w-[280px] shrink-0 overflow-y-auto border-r border-border/70 bg-surface/55 p-4 pt-16 backdrop-blur-md lg:block">
         <LeftPanel profile={profile} />
       </aside>
 
-      {/* Main content */}
-      <div className="flex flex-col min-h-dvh max-w-[640px] w-full">
+      <div className="relative flex min-h-dvh w-full max-w-[760px] flex-col border-x border-border/40 bg-bg/35 backdrop-blur-[2px]">
         <TopBar profile={profile} />
-        <main className="flex-1 pt-12 pb-14 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto px-1 pb-20 pt-16 md:px-3 md:pb-24">
+          {children}
+        </main>
         <BottomNav />
       </div>
 
-      {/* Right panel — desktop only */}
-      <aside className="hidden lg:block w-[280px] shrink-0 sticky top-12 h-[calc(100dvh-3rem)] overflow-y-auto border-l border-border bg-bg p-4">
+      <aside className="hidden h-[calc(100dvh-4rem)] w-[280px] shrink-0 overflow-y-auto border-l border-border/70 bg-surface/55 p-4 pt-16 backdrop-blur-md lg:block">
         <RightPanel userId={user?.id ?? null} />
       </aside>
     </div>

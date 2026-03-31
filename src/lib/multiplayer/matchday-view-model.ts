@@ -29,12 +29,34 @@ export interface MatchdaySessionView {
     side: SessionSide;
     connected: boolean;
   } | null;
+  turns: Array<{
+    side: SessionSide;
+    turnNumber: number;
+    payload: Record<string, unknown>;
+    submittedAt: string;
+  }>;
 }
 
 export interface ReconnectViewModel {
   state: "ready" | "needs_session" | "already_connected" | "session_completed" | "inactive";
   canReconnect: boolean;
   message: string;
+}
+
+export type TacticalCommandType =
+  | "mentality_shift"
+  | "tempo_shift"
+  | "pressing_line"
+  | "width_shift";
+
+export interface TacticalCommandOption {
+  value: string;
+  label: string;
+}
+
+export interface TacticalCommandAvailability {
+  canSubmit: boolean;
+  reason: string;
 }
 
 const PHASE_ORDER: MatchPhase[] = ["lobby", "first_half", "halftime", "second_half", "fulltime"];
@@ -145,5 +167,88 @@ export function buildReconnectViewModel(session: MatchdaySessionView | null, has
     state: "ready",
     canReconnect: true,
     message: "Ready to reconnect and resume live play.",
+  };
+}
+
+export function tacticalCommandOptions(type: TacticalCommandType): TacticalCommandOption[] {
+  if (type === "mentality_shift") {
+    return [
+      { value: "Defensive", label: "Defensive" },
+      { value: "Cautious", label: "Cautious" },
+      { value: "Balanced", label: "Balanced" },
+      { value: "Attacking", label: "Attacking" },
+      { value: "All-out Attack", label: "All-out Attack" },
+    ];
+  }
+
+  if (type === "tempo_shift") {
+    return [
+      { value: "Slow", label: "Slow" },
+      { value: "Normal", label: "Normal" },
+      { value: "Fast", label: "Fast" },
+    ];
+  }
+
+  if (type === "pressing_line") {
+    return [
+      { value: "Low", label: "Low" },
+      { value: "Medium", label: "Medium" },
+      { value: "High", label: "High" },
+    ];
+  }
+
+  return [
+    { value: "Narrow", label: "Narrow" },
+    { value: "Normal", label: "Normal" },
+    { value: "Wide", label: "Wide" },
+  ];
+}
+
+export function tacticalCommandAvailability(session: MatchdaySessionView | null): TacticalCommandAvailability {
+  if (!session) {
+    return {
+      canSubmit: false,
+      reason: "Load a fixture session first.",
+    };
+  }
+
+  if (session.status !== "active") {
+    return {
+      canSubmit: false,
+      reason: "Session is not active.",
+    };
+  }
+
+  if (!session.you) {
+    return {
+      canSubmit: false,
+      reason: "Join this fixture as a participant first.",
+    };
+  }
+
+  if (!session.you.connected) {
+    return {
+      canSubmit: false,
+      reason: "Reconnect before submitting commands.",
+    };
+  }
+
+  if (session.phase === "lobby" || session.phase === "fulltime") {
+    return {
+      canSubmit: false,
+      reason: "Commands are only available during live phases.",
+    };
+  }
+
+  if (session.activeSide !== session.you.side) {
+    return {
+      canSubmit: false,
+      reason: "Wait for your turn to issue a command.",
+    };
+  }
+
+  return {
+    canSubmit: true,
+    reason: "Command window open.",
   };
 }

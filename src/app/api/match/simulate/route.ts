@@ -6,6 +6,7 @@ import { PLAYERS } from "@/lib/data/players";
 import { generateAISquad, generateAITactics } from "@/lib/engine/ai-opponent";
 import { getFormation } from "@/lib/data/formations";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
+import { persistNarrativeArtifacts } from "@/lib/engine/narrative-pipeline";
 import type { Player, Tactics } from "@/lib/types";
 
 // Resolve squad rows (from DB) to Player objects
@@ -217,6 +218,19 @@ export async function POST(request: Request) {
       })
       .eq("id", matchId);
     timings.matchUpdateMs = Date.now() - matchUpdateStartedAt;
+
+    const narrativeWriteStartedAt = Date.now();
+    await persistNarrativeArtifacts(supabase, {
+      matchId,
+      matchType: match.match_type,
+      homeUserId: match.home_user_id,
+      awayUserId: match.away_user_id,
+      homeScore: result.homeScore,
+      awayScore: result.awayScore,
+      stats: result.stats,
+      events: result.events,
+    });
+    timings.narrativeWriteMs = Date.now() - narrativeWriteStartedAt;
 
     // Update player profiles for ranked
     if (match.match_type === "ranked") {

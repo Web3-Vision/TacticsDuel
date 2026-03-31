@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { createClient } from "@/lib/supabase/client";
-import type { Player, Profile } from "@/lib/types";
+import type { Profile } from "@/lib/types";
 import { Swords, Users, Bot, Copy, Share2, ArrowLeft, Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { evaluateRankedReadiness, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
 
 type FriendView = "menu" | "create" | "join" | "pending";
 type InviteMode = "bring_squad" | "live_draft";
@@ -23,10 +24,9 @@ interface Invite {
 export default function PlayPage() {
   const router = useRouter();
   const { filledCount } = useSquadStore();
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [squadSaved, setSquadSaved] = useState(false);
+  const [savedStarterCount, setSavedStarterCount] = useState(0);
   const [tacticsSaved, setTacticsSaved] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -42,10 +42,6 @@ export default function PlayPage() {
   const [copied, setCopied] = useState(false);
   const [showFriend, setShowFriend] = useState(false);
 
-  useEffect(() => {
-    import("@/lib/data/players").then((mod) => setPlayers(mod.PLAYERS));
-  }, []);
-
   // Check if squad and tactics are saved to DB, and load profile
   useEffect(() => {
     async function check() {
@@ -55,20 +51,28 @@ export default function PlayPage() {
 
       const [profileRes, squadRes, tacticsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).single(),
-        supabase.from("squads").select("user_id").eq("user_id", user.id).single(),
+        supabase.from("squads").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_starter", true),
         supabase.from("tactics").select("user_id").eq("user_id", user.id).single(),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data as Profile);
-      setSquadSaved(!!squadRes.data);
+      const starters = squadRes.count ?? 0;
+      setSavedStarterCount(starters);
+      setSquadSaved(starters >= RANKED_MIN_STARTERS);
       setTacticsSaved(!!tacticsRes.data);
       setChecking(false);
     }
     check();
   }, []);
 
-  const squadReady = filledCount() >= 11;
-  const rankedReady = squadReady && squadSaved && tacticsSaved && profile?.squad_locked;
+  const squadReady = filledCount() >= RANKED_MIN_STARTERS;
+  const rankedReadiness = evaluateRankedReadiness({
+    localFilledCount: filledCount(),
+    savedStarterCount,
+    hasTactics: tacticsSaved,
+    squadLocked: Boolean(profile?.squad_locked),
+  });
+  const rankedReady = rankedReadiness.isReady;
 
   // --- VS AI ---
   function handlePlayAI() {
@@ -94,10 +98,15 @@ export default function PlayPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setFriendError(data.error || "Failed to create invite");
+        setFriendError(data.error?.message || data.error || "Failed to create invite");
+        return;
+      }
+      if (data.status !== "invite_created" || !data.invite) {
+        setFriendError("Unexpected invite response");
         return;
       }
       setCreatedInvite(data.invite);
+      setPendingInvites((current) => [data.invite, ...current]);
     } catch {
       setFriendError("Network error");
     } finally {
@@ -132,7 +141,11 @@ export default function PlayPage() {
       );
       const data = await res.json();
       if (!res.ok) {
-        setFriendError(data.error || "Invite not found");
+        setFriendError(data.error?.message || data.error || "Invite not found");
+        return;
+      }
+      if (data.status !== "invite_ready" || !data.invite) {
+        setFriendError("Unexpected invite response");
         return;
       }
       setFetchedInvite(data.invite);
@@ -155,13 +168,13 @@ export default function PlayPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setFriendError(data.error || "Failed to accept invite");
+        setFriendError(data.error?.message || data.error || "Failed to accept invite");
         return;
       }
 
-      if (data.mode === "bring_squad") {
+      if (data.status === "match_ready" && data.mode === "bring_squad") {
         router.push("/match/live");
-      } else if (data.mode === "live_draft") {
+      } else if (data.status === "draft_ready" && data.mode === "live_draft") {
         const draftRes = await fetch("/api/draft/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -169,10 +182,12 @@ export default function PlayPage() {
         });
         const draftData = await draftRes.json();
         if (!draftRes.ok) {
-          setFriendError(draftData.error || "Failed to create draft");
+          setFriendError(draftData.error?.message || draftData.error || "Failed to create draft");
           return;
         }
         router.push(`/draft/${draftData.draft.id}`);
+      } else {
+        setFriendError("Unexpected invite acceptance response");
       }
     } catch {
       setFriendError("Network error");
@@ -497,67 +512,72 @@ export default function PlayPage() {
     );
   }
 
-  // Determine ranked button message
-  let rankedMessage = "Climb the divisions";
-  if (!squadReady) rankedMessage = `Need 11 players (${filledCount()}/11)`;
-  else if (!squadSaved) rankedMessage = "Save your squad first";
-  else if (!tacticsSaved) rankedMessage = "Save your tactics first";
-  else if (!profile?.squad_locked) rankedMessage = "Lock squad for ranked first";
+  const rankedMessage = rankedReadiness.message;
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <h1 className="font-mono text-lg uppercase tracking-wide">Play</h1>
+    <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
+      <section className="glass-panel panel-enter rounded-xl p-3">
+        <p className="section-title">Match Center</p>
+        <h1 className="mt-1 font-mono text-lg uppercase tracking-[0.12em] text-text">
+          Select Your Arena
+        </h1>
+        <p className="mt-1 text-xs text-text-mid">
+          Keep your squad ready, then queue AI practice, friend duels, or ranked progression.
+        </p>
+      </section>
 
       {!squadReady && (
-        <div className="bg-surface-alt border border-border rounded-md p-3">
+        <div className="rounded-md border border-gold/45 bg-gold/10 p-3">
           <p className="font-mono text-xs text-gold">
-            Build your squad first ({filledCount()}/11 players)
+            Build your squad first ({filledCount()}/11 players filled).
           </p>
         </div>
       )}
 
-      {/* VS AI */}
       <button
         onClick={handlePlayAI}
-        disabled={!squadReady || loading}
-        className="w-full bg-surface border border-border rounded-md p-4 flex items-center gap-4 hover:border-border-light transition-colors duration-100 disabled:opacity-40 text-left"
+        disabled={!squadReady}
+        className="glass-panel panel-enter w-full rounded-xl p-4 text-left transition-colors duration-150 hover:border-border-light disabled:opacity-45"
       >
-        <Bot size={24} strokeWidth={1.5} className="text-accent shrink-0" />
-        <div className="flex-1">
-          <p className="font-mono text-md uppercase tracking-wide">VS AI</p>
-          <p className="text-text-dim text-xs mt-0.5">
-            Practice match against computer
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex size-11 items-center justify-center rounded-md border border-border bg-bg/65">
+            <Bot size={20} strokeWidth={1.8} className="text-accent shrink-0" />
+          </div>
+          <div className="flex-1">
+            <p className="font-mono text-sm uppercase tracking-[0.12em] text-text">VS AI</p>
+            <p className="mt-0.5 text-xs text-text-mid">
+              Warm-up fixture with no ranked pressure.
+            </p>
+          </div>
         </div>
       </button>
 
-      {/* Ranked */}
       <button
         onClick={handlePlayRanked}
-        disabled={!rankedReady || loading || checking}
+        disabled={!rankedReady || checking}
         className={cn(
-          "w-full bg-surface border rounded-md p-4 flex items-center gap-4 transition-colors duration-100 text-left",
+          "panel-enter w-full rounded-xl border p-4 text-left transition-colors duration-150",
           rankedReady
-            ? "border-accent/40 hover:border-accent"
-            : "border-border disabled:opacity-40"
+            ? "glass-panel border-accent/35 hover:border-accent"
+            : "glass-panel border-border disabled:opacity-45"
         )}
       >
-        <Swords size={24} strokeWidth={1.5} className="text-accent shrink-0" />
-        <div className="flex-1">
-          <p className="font-mono text-md uppercase tracking-wide">Ranked</p>
-          <p className={cn(
-            "text-xs mt-0.5",
-            rankedReady ? "text-text-dim" : "text-gold"
-          )}>
-            {checking ? "Checking..." : rankedMessage}
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex size-11 items-center justify-center rounded-md border border-border bg-bg/65">
+            <Swords size={20} strokeWidth={1.8} className="text-accent shrink-0" />
+          </div>
+          <div className="flex-1">
+            <p className="font-mono text-sm uppercase tracking-[0.12em] text-text">Ranked</p>
+            <p className={cn("mt-0.5 text-xs", rankedReady ? "text-text-mid" : "text-gold")}>
+              {checking ? "Checking readiness..." : rankedMessage}
+            </p>
+          </div>
+          {profile?.squad_locked && (
+            <Lock size={14} strokeWidth={1.8} className="text-accent shrink-0" />
+          )}
         </div>
-        {profile?.squad_locked && (
-          <Lock size={14} strokeWidth={1.5} className="text-accent shrink-0" />
-        )}
       </button>
 
-      {/* VS Friend */}
       <div className="flex flex-col">
         <button
           onClick={() => {
@@ -568,36 +588,35 @@ export default function PlayPage() {
             }
           }}
           disabled={!squadReady}
-          className="w-full bg-surface border border-border rounded-md p-4 flex items-center gap-4 hover:border-border-light transition-colors duration-100 disabled:opacity-40 text-left"
+          className="glass-panel panel-enter w-full rounded-xl p-4 text-left transition-colors duration-150 hover:border-border-light disabled:opacity-45"
         >
-          <Users size={24} strokeWidth={1.5} className="text-accent shrink-0" />
-          <div className="flex-1">
-            <p className="font-mono text-md uppercase tracking-wide">
-              VS Friend
-            </p>
-            <p className="text-text-dim text-xs mt-0.5">
-              Challenge a friend
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="flex size-11 items-center justify-center rounded-md border border-border bg-bg/65">
+              <Users size={20} strokeWidth={1.8} className="text-accent shrink-0" />
+            </div>
+            <div className="flex-1">
+              <p className="font-mono text-sm uppercase tracking-[0.12em] text-text">VS Friend</p>
+              <p className="mt-0.5 text-xs text-text-mid">Invite flow with code share and quick join.</p>
+            </div>
           </div>
         </button>
 
         {showFriend && (
-          <div className="bg-surface border border-border border-t-0 rounded-b-md p-4">
+          <div className="glass-panel rounded-b-xl border-t-0 p-4">
             {renderFriendContent()}
           </div>
         )}
       </div>
 
-      {/* Ranked readiness checklist */}
       {squadReady && !rankedReady && !checking && (
-        <div className="bg-surface border border-border rounded-md p-3 flex flex-col gap-1.5">
-          <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide mb-1">
-            Ranked Checklist
-          </p>
-          <CheckItem done={squadSaved} label="Squad saved to server" />
-          <CheckItem done={tacticsSaved} label="Tactics configured & saved" />
-          <CheckItem done={profile?.squad_locked ?? false} label="Squad locked for ranked" />
-        </div>
+        <section className="glass-panel panel-enter rounded-xl p-3">
+          <p className="section-title">Ranked Checklist</p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <CheckItem done={squadSaved} label={`Squad saved to server (${savedStarterCount}/${RANKED_MIN_STARTERS})`} />
+            <CheckItem done={tacticsSaved} label="Tactics configured and saved" />
+            <CheckItem done={profile?.squad_locked ?? false} label="Squad locked for ranked" />
+          </div>
+        </section>
       )}
     </div>
   );
@@ -605,9 +624,9 @@ export default function PlayPage() {
 
 function CheckItem({ done, label }: { done: boolean; label: string }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-bg/60 px-2.5 py-2">
       <div className={cn(
-        "w-3 h-3 rounded-sm flex items-center justify-center",
+        "h-3 w-3 rounded-sm flex items-center justify-center",
         done ? "bg-accent/20" : "bg-border"
       )}>
         {done && <span className="text-accent text-[8px] font-bold">✓</span>}

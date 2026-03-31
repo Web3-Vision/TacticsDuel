@@ -43,6 +43,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/squad") ||
     request.nextUrl.pathname.startsWith("/play") ||
     request.nextUrl.pathname.startsWith("/match") ||
+    request.nextUrl.pathname.startsWith("/inbox") ||
+    request.nextUrl.pathname.startsWith("/news") ||
     request.nextUrl.pathname.startsWith("/divisions") ||
     request.nextUrl.pathname.startsWith("/history") ||
     request.nextUrl.pathname.startsWith("/profile") ||

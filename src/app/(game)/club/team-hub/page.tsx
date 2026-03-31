@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFormation } from "@/lib/data/formations";
 import { getPlayerById } from "@/lib/data/players";
 import { formatPrice } from "@/lib/utils";
+import { Lock, Unlock, ArrowRight } from "lucide-react";
 
 interface SquadRow {
   formation: string;
@@ -19,8 +20,8 @@ export default async function TeamHubPage() {
 
   if (!user) {
     return (
-      <div className="p-4">
-        <div className="bg-surface border border-border rounded-md p-4">
+      <div className="p-3 md:p-4">
+        <div className="glass-panel rounded-xl p-4">
           <p className="font-mono text-xs text-text">Sign in to access Team Hub.</p>
         </div>
       </div>
@@ -59,69 +60,70 @@ export default async function TeamHubPage() {
   const filledBench = bench.filter(Boolean).length;
 
   return (
-    <div className="p-4 flex flex-col gap-3 pb-20">
-      <section className="bg-surface border border-border rounded-md p-4">
-        <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide">Team Hub</p>
-        <p className="font-mono text-sm text-text mt-1">Squad readiness and market control center.</p>
+    <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
+      <section className="glass-panel panel-enter rounded-xl p-4">
+        <p className="section-title">Team Hub</p>
+        <h1 className="mt-1 font-mono text-lg uppercase tracking-[0.12em] text-text">
+          Squad Readiness Board
+        </h1>
+        <p className="mt-1 text-xs text-text-mid">
+          Manage availability, market exposure, and ranked lock status from one screen.
+        </p>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Coins</p>
-            <p className="font-mono text-xs text-gold tabular-nums mt-0.5">{formatPrice(profile?.coins ?? 0)}</p>
-          </div>
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Transfers</p>
-            <p className="font-mono text-xs text-text tabular-nums mt-0.5">{profile?.transfers_remaining ?? 0}</p>
-          </div>
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Cycle Matches</p>
-            <p className="font-mono text-xs text-text tabular-nums mt-0.5">{profile?.ranked_matches_in_cycle ?? 0}</p>
-          </div>
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Open Listings</p>
-            <p className="font-mono text-xs text-text tabular-nums mt-0.5">{openListingCount ?? 0}</p>
-          </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <MetricTile label="Coins" value={formatPrice(profile?.coins ?? 0)} valueClass="text-gold" />
+          <MetricTile label="Transfers" value={String(profile?.transfers_remaining ?? 0)} />
+          <MetricTile label="Cycle Matches" value={String(profile?.ranked_matches_in_cycle ?? 0)} />
+          <MetricTile label="Open Listings" value={String(openListingCount ?? 0)} />
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <Link
             href="/club/market"
-            className="inline-flex h-8 px-3 items-center rounded-[4px] bg-accent text-black font-mono text-[10px] uppercase tracking-wide hover:bg-accent-dim transition-colors duration-100"
+            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-accent px-4 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-black transition-colors duration-150 hover:bg-accent-dim"
           >
-            Browse Market
+            Browse Market <ArrowRight size={13} strokeWidth={1.8} />
           </Link>
           <Link
             href="/club/squad"
-            className="inline-flex h-8 px-3 items-center rounded-[4px] border border-border text-text-mid font-mono text-[10px] uppercase tracking-wide hover:border-border-light transition-colors duration-100"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-border bg-surface px-4 font-mono text-[11px] uppercase tracking-[0.14em] text-text-mid transition-colors duration-150 hover:border-border-light hover:text-text"
           >
             Edit Squad
           </Link>
         </div>
 
-        {profile?.squad_locked && (
-          <p className="font-mono text-[10px] text-loss mt-2">
-            Squad is locked for the current ranked cycle. You can still browse market listings.
+        <div className="mt-3 rounded-md border border-border bg-bg/65 px-3 py-2">
+          <p className="flex items-center gap-1.5 font-mono text-xs text-text-mid">
+            {profile?.squad_locked ? (
+              <Lock size={13} className="text-accent" strokeWidth={1.8} />
+            ) : (
+              <Unlock size={13} className="text-gold" strokeWidth={1.8} />
+            )}
+            {profile?.squad_locked
+              ? "Squad is locked for ranked cycle. Market browsing remains available."
+              : "Squad is unlocked. You can keep editing before entering ranked."}
           </p>
-        )}
+        </div>
       </section>
 
-      <section className="bg-surface border border-border rounded-md p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide">Starting XI</p>
+      <section className="glass-panel panel-enter rounded-xl p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="section-title">Starting XI</p>
           <p className="font-mono text-[10px] text-text-dim tabular-nums">{filledStarters}/11</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+
+        <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
           {formation.slots.map((slot, index) => {
             const player = starters[index];
             return (
               <div
-                key={`${slot.label}-${index}`}
-                className="h-10 px-2.5 rounded-[4px] border border-border flex items-center gap-2"
+                key={slot.label + "-" + String(index)}
+                className="flex h-10 items-center gap-2 rounded-md border border-border bg-bg/65 px-2.5 transition-colors duration-150 hover:border-border-light"
               >
-                <span className="font-mono text-[10px] text-text-dim uppercase w-8">{slot.label}</span>
+                <span className="w-8 font-mono text-[10px] uppercase text-text-dim">{slot.label}</span>
                 {player ? (
                   <>
-                    <span className="font-mono text-xs text-text flex-1 truncate">{player.name}</span>
+                    <span className="flex-1 truncate font-mono text-xs text-text">{player.name}</span>
                     <span className="font-mono text-[10px] text-accent tabular-nums">{player.overall}</span>
                   </>
                 ) : (
@@ -133,21 +135,25 @@ export default async function TeamHubPage() {
         </div>
       </section>
 
-      <section className="bg-surface border border-border rounded-md p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide">Bench Unit</p>
+      <section className="glass-panel panel-enter rounded-xl p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="section-title">Bench Unit</p>
           <p className="font-mono text-[10px] text-text-dim tabular-nums">{filledBench}/10</p>
         </div>
+
         {filledBench === 0 ? (
-          <p className="font-mono text-xs text-text-dim">No bench players assigned.</p>
+          <p className="font-mono text-xs text-text-dim">No bench players assigned yet.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
             {bench.map((player, index) => {
               if (!player) return null;
               return (
-                <div key={`${player.id}-${index}`} className="h-9 px-2.5 rounded-[4px] border border-border flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-text-dim uppercase w-6">{player.position}</span>
-                  <span className="font-mono text-xs text-text flex-1 truncate">{player.name}</span>
+                <div
+                  key={player.id + "-" + String(index)}
+                  className="flex h-9 items-center gap-2 rounded-md border border-border bg-bg/65 px-2.5 transition-colors duration-150 hover:border-border-light"
+                >
+                  <span className="w-6 font-mono text-[10px] uppercase text-text-dim">{player.position}</span>
+                  <span className="flex-1 truncate font-mono text-xs text-text">{player.name}</span>
                   <span className="font-mono text-[10px] text-accent tabular-nums">{player.overall}</span>
                 </div>
               );
@@ -155,6 +161,23 @@ export default async function TeamHubPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+      <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">{label}</p>
+      <p className={`mt-0.5 font-mono text-sm tabular-nums text-text ${valueClass ?? ""}`}>{value}</p>
     </div>
   );
 }

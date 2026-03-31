@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useMatchStore } from "@/lib/stores/match-store";
 import { Loader2, Swords, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 type QueueState = "idle" | "joining" | "searching" | "found" | "simulating" | "error";
 
@@ -23,17 +22,17 @@ export default function QueuePage() {
       const res = await fetch("/api/match/queue", { method: "POST" });
       const data = await res.json();
 
-      if (data.matchFound && data.matchId) {
+      if (data.status === "match_found" && data.matchId) {
         setState("found");
         await simulateAndView(data.matchId);
         return;
       }
 
-      if (data.queued) {
+      if (data.status === "queued") {
         setState("searching");
         startPolling();
       } else {
-        setError(data.error || "Failed to join queue");
+        setError(data.error?.message || data.error || "Failed to join queue");
         setState("error");
       }
     } catch {
@@ -48,7 +47,7 @@ export default function QueuePage() {
         const res = await fetch("/api/match/queue");
         const data = await res.json();
 
-        if (data.matchFound && data.matchId) {
+        if (data.status === "match_found" && data.matchId) {
           clearInterval(pollRef.current!);
           setState("found");
           await simulateAndView(data.matchId);
@@ -57,7 +56,7 @@ export default function QueuePage() {
 
         setWaitTime(data.waitTime || 0);
 
-        if (!data.inQueue) {
+        if (data.status === "not_in_queue" || !data.inQueue) {
           clearInterval(pollRef.current!);
           setState("idle");
         }

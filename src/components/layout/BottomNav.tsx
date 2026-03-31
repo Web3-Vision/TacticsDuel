@@ -17,45 +17,50 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 h-14 bg-surface border-t border-border pb-safe">
-      <div className="flex items-stretch h-full max-w-[640px] mx-auto">
-        {tabs.map((tab) => {
-          let isActive = false;
-          if (tab.href === "/home") {
-            isActive = pathname === "/home";
-          } else if (tab.href === "/play") {
-            isActive =
-              pathname.startsWith("/play") ||
-              pathname.startsWith("/match") ||
-              pathname.startsWith("/matchday");
-          } else if (tab.href === "/club/squad") {
-            isActive = pathname === "/club/squad" || pathname === "/club/tactics";
-          } else if (tab.href === "/club/market") {
-            isActive = pathname === "/club/market" || pathname === "/club/players";
-          } else if (tab.href === "/club/team-hub") {
-            isActive = pathname === "/club/team-hub" || pathname === "/club" || pathname === "/club/leaderboard";
-          }
+    <nav className="fixed inset-x-0 bottom-0 z-50 pb-safe">
+      <div className="mx-auto w-full max-w-[760px] px-2 pb-2">
+        <div className="glass-panel flex h-14 items-stretch rounded-xl border border-border/70">
+          {tabs.map((tab) => {
+            let isActive = false;
+            if (tab.href === "/home") {
+              isActive = pathname === "/home";
+            } else if (tab.href === "/play") {
+              isActive =
+                pathname.startsWith("/play") ||
+                pathname.startsWith("/match") ||
+                pathname.startsWith("/matchday");
+            } else if (tab.href === "/club/squad") {
+              isActive = pathname === "/club/squad" || pathname === "/club/tactics";
+            } else if (tab.href === "/club/market") {
+              isActive = pathname === "/club/market" || pathname === "/club/players";
+            } else if (tab.href === "/club/team-hub") {
+              isActive =
+                pathname === "/club/team-hub" ||
+                pathname === "/club" ||
+                pathname === "/club/leaderboard";
+            }
 
-          const Icon = tab.icon;
+            const Icon = tab.icon;
 
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px]",
-                isActive
-                  ? "text-accent border-t-2 border-accent -mt-px"
-                  : "text-text-dim"
-              )}
-            >
-              <Icon size={18} strokeWidth={1.5} />
-              <span className="font-mono text-[9px] uppercase tracking-wide">
-                {tab.label}
-              </span>
-            </Link>
-          );
-        })}
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  "flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors duration-150",
+                  isActive
+                    ? "bg-accent/15 text-accent"
+                    : "text-text-dim hover:bg-surface-alt/55 hover:text-text-mid"
+                )}
+              >
+                <Icon size={16} strokeWidth={1.8} />
+                <span className="font-mono text-[9px] uppercase tracking-[0.14em]">
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

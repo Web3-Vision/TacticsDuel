@@ -17,36 +17,38 @@ export default function TopBar({ profile }: TopBarProps) {
   const initial = profile?.username?.charAt(0)?.toUpperCase() ?? "?";
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-12 bg-surface border-b border-border pt-safe">
-      <div className="flex items-center h-full px-4 max-w-[640px] mx-auto">
-      <div className="flex-1 min-w-0">
-        <p className="font-mono text-[13px] text-text truncate">
-          {profile?.club_name ?? "TacticsDuel"}
-        </p>
-      </div>
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-border/70 bg-surface/85 pt-safe backdrop-blur-md">
+      <div className="mx-auto flex h-14 w-full max-w-[760px] items-center gap-2 px-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-[11px] uppercase tracking-[0.15em] text-text-dim">
+            Active Club
+          </p>
+          <p className="truncate font-mono text-sm text-text">
+            {profile?.club_name ?? "TacticsDuel"}
+          </p>
+        </div>
 
-      <div className="flex items-center gap-1.5 mx-3">
-        <Trophy size={14} strokeWidth={1.5} className="text-gold" />
-        <span className="font-mono text-xs text-text-mid">
-          {division ? `Div ${division.id}` : "--"}
-        </span>
-      </div>
+        <div className="hidden items-center gap-1 rounded-md border border-border/70 bg-bg/55 px-2 py-1 sm:flex">
+          <Trophy size={13} strokeWidth={1.7} className="text-gold" />
+          <span className="font-mono text-[11px] text-text-mid">
+            {division ? `Div ${division.id}` : "Unranked"}
+          </span>
+        </div>
 
-      <div className="flex items-center gap-1.5 mr-3">
-        <Coins size={14} strokeWidth={1.5} className="text-gold" />
-        <span className="font-mono text-xs text-text-mid tabular-nums">
-          {profile?.coins ?? 0}
-        </span>
-      </div>
+        <div className="flex items-center gap-1 rounded-md border border-border/70 bg-bg/55 px-2 py-1">
+          <Coins size={13} strokeWidth={1.7} className="text-gold" />
+          <span className="font-mono text-[11px] text-text-mid tabular-nums">
+            {profile?.coins ?? 0}
+          </span>
+        </div>
 
-      <Link
-        href="/profile"
-        className="w-7 h-7 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:border-accent transition-colors duration-100"
-      >
-        <span className="font-mono text-[10px] font-semibold text-text-mid">
-          {initial}
-        </span>
-      </Link>
+        <Link
+          href="/profile"
+          className="flex size-8 items-center justify-center rounded-md border border-border/80 bg-surface-alt text-[11px] font-semibold text-text-mid transition-colors duration-150 hover:border-accent hover:text-text"
+          aria-label="Open profile"
+        >
+          <span className="font-mono">{initial}</span>
+        </Link>
       </div>
     </header>
   );

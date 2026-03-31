@@ -1,8 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Radio, RefreshCw, TimerReset, Users } from "lucide-react";
-import { buildReconnectViewModel, buildTimeline, fixtureStatusSummary, nextPhase, type MatchdaySessionView } from "@/lib/multiplayer/matchday-view-model";
+import { Loader2, Radio, RefreshCw, TimerReset, Users, Zap } from "lucide-react";
+import {
+  buildReconnectViewModel,
+  buildTimeline,
+  fixtureStatusSummary,
+  nextPhase,
+  tacticalCommandAvailability,
+  tacticalCommandOptions,
+  type MatchdaySessionView,
+  type TacticalCommandType,
+} from "@/lib/multiplayer/matchday-view-model";
 import { cn } from "@/lib/utils";
 
 interface SessionApiResponse {
@@ -12,6 +21,12 @@ interface SessionApiResponse {
 }
 
 const SESSION_ID_STORAGE_KEY = "matchday.sessionId";
+const COMMAND_TYPE_LABELS: Record<TacticalCommandType, string> = {
+  mentality_shift: "Mentality Shift",
+  tempo_shift: "Tempo Shift",
+  pressing_line: "Pressing Line",
+  width_shift: "Width Shift",
+};
 
 async function sessionPost(body: Record<string, unknown>) {
   const response = await fetch("/api/match/session", {
@@ -72,6 +87,10 @@ export default function MatchdayPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("Enter room code to join, or create a new fixture room.");
+  const [commandType, setCommandType] = useState<TacticalCommandType>("mentality_shift");
+  const [commandValue, setCommandValue] = useState("Balanced");
+  const [lastCommandAckMs, setLastCommandAckMs] = useState<number | null>(null);
+  const [lastCommandTurn, setLastCommandTurn] = useState<number | null>(null);
 
   const hydrateFromStorage = useCallback(async () => {
     const storedSessionId = readSessionId();
@@ -269,11 +288,64 @@ export default function MatchdayPage() {
     }
   }, [session?.id]);
 
+  const onSubmitCommand = useCallback(async () => {
+    if (!session) {
+      return;
+    }
+
+    setBusyAction("submit_command");
+    setError("");
+
+    const startedAt = performance.now();
+
+    try {
+      const updated = await sessionPost({
+        action: "submit_turn",
+        sessionId: session.id,
+        turnNumber: session.turnNumber,
+        payload: {
+          action: "tactical_command",
+          commandType,
+          value: commandValue,
+          phase: session.phase,
+          sentAt: new Date().toISOString(),
+        },
+      });
+      const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
+      setLastCommandAckMs(elapsedMs);
+      setLastCommandTurn(session.turnNumber);
+      setSession(updated);
+      setInfo(`Command acknowledged in ${elapsedMs}ms.`);
+    } catch (submitError) {
+      setError((submitError as Error).message);
+    } finally {
+      setBusyAction(null);
+    }
+  }, [commandType, commandValue, session]);
+
   const timeline = useMemo(() => buildTimeline(session?.phase ?? "lobby"), [session?.phase]);
   const reconnectView = useMemo(
     () => buildReconnectViewModel(session, Boolean(sessionIdInput.trim())),
     [session, sessionIdInput],
   );
+  const commandWindow = useMemo(() => tacticalCommandAvailability(session), [session]);
+  const commandOptions = useMemo(() => tacticalCommandOptions(commandType), [commandType]);
+  const latestCommandTurn = useMemo(() => {
+    if (!session) {
+      return null;
+    }
+
+    const tacticalTurns = session.turns.filter((turn) => turn.payload.action === "tactical_command");
+    return tacticalTurns[tacticalTurns.length - 1] ?? null;
+  }, [session]);
+
+  useEffect(() => {
+    const fallback = tacticalCommandOptions(commandType)[0]?.value ?? "";
+    const hasCurrent = tacticalCommandOptions(commandType).some((option) => option.value === commandValue);
+    if (!hasCurrent) {
+      setCommandValue(fallback);
+    }
+  }, [commandType, commandValue]);
 
   const canAdvancePhase = Boolean(
     session &&
@@ -512,6 +584,80 @@ export default function MatchdayPage() {
           )}
         </section>
       </div>
+
+      <section className="rounded-lg border border-border bg-surface p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Zap size={14} className="text-accent" />
+          <h2 className="font-mono text-sm uppercase tracking-wide">Tactical Command Window</h2>
+        </div>
+
+        <p className="font-mono text-[11px] text-text-mid">{commandWindow.reason}</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-wide text-text-dim">Command Type</span>
+            <select
+              value={commandType}
+              onChange={(event) => setCommandType(event.target.value as TacticalCommandType)}
+              className="w-full h-10 bg-bg border border-border rounded-md px-3 font-mono text-xs text-text"
+              disabled={busyAction !== null}
+            >
+              {(Object.keys(COMMAND_TYPE_LABELS) as TacticalCommandType[]).map((type) => (
+                <option key={type} value={type}>
+                  {COMMAND_TYPE_LABELS[type]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-wide text-text-dim">Command Value</span>
+            <select
+              value={commandValue}
+              onChange={(event) => setCommandValue(event.target.value)}
+              className="w-full h-10 bg-bg border border-border rounded-md px-3 font-mono text-xs text-text"
+              disabled={busyAction !== null}
+            >
+              {commandOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void onSubmitCommand()}
+            disabled={busyAction !== null || !commandWindow.canSubmit}
+            className="h-10 px-4 rounded-md bg-home text-text font-mono text-xs uppercase tracking-wide disabled:opacity-50"
+          >
+            {busyAction === "submit_command" ? "Submitting..." : "Submit Tactical Command"}
+          </button>
+          {busyAction === "submit_command" && (
+            <span className="font-mono text-[10px] text-text-dim uppercase tracking-wide">Awaiting server acknowledgment...</span>
+          )}
+          {lastCommandAckMs !== null && lastCommandTurn !== null && (
+            <span className="font-mono text-[10px] text-accent uppercase tracking-wide">
+              Last ACK: turn {lastCommandTurn} in {lastCommandAckMs}ms
+            </span>
+          )}
+        </div>
+
+        {latestCommandTurn && (
+          <div className="rounded-md border border-border bg-bg/50 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-wide text-text-dim">Latest Authoritative Command</p>
+            <p className="font-mono text-xs text-text mt-1">
+              Turn {latestCommandTurn.turnNumber} by {latestCommandTurn.side.toUpperCase()} in {session?.phase.replace("_", " ")}
+            </p>
+            <p className="font-mono text-[11px] text-text-mid mt-1 break-all">
+              {JSON.stringify(latestCommandTurn.payload)}
+            </p>
+          </div>
+        )}
+      </section>
 
       <section className="rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center gap-2">

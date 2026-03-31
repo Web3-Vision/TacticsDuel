@@ -1,0 +1,8 @@
+desktop|home|http://localhost:3000/home|- complementary - paragraph - StaticText "QA Sprint 3 FC" - paragraph - StaticText "@qa_sprint3" - StaticText "AMATEUR" 
+desktop|play|http://localhost:3000/play|- complementary - paragraph - StaticText "QA Sprint 3 FC" - paragraph - StaticText "@qa_sprint3" - StaticText "AMATEUR" 
+desktop|team-hub|http://localhost:3000/club/team-hub|- complementary - paragraph - StaticText "QA Sprint 3 FC" - paragraph - StaticText "@qa_sprint3" - StaticText "AMATEUR" 
+desktop|market|http://localhost:3000/club/market|- complementary - paragraph - StaticText "QA Sprint 3 FC" - paragraph - StaticText "@qa_sprint3" - StaticText "AMATEUR" 
+mobile|home|http://localhost:3000/home|- generic - banner - paragraph - StaticText "ACTIVE CLUB" - paragraph - StaticText "QA Sprint 3 FC" 
+mobile|play|http://localhost:3000/play|- generic - banner - paragraph - StaticText "ACTIVE CLUB" - paragraph - StaticText "QA Sprint 3 FC" 
+mobile|team-hub|http://localhost:3000/club/team-hub|- generic - banner - paragraph - StaticText "ACTIVE CLUB" - paragraph - StaticText "QA Sprint 3 FC" 
+mobile|market|http://localhost:3000/club/market|- generic - banner - paragraph - StaticText "ACTIVE CLUB" - paragraph - StaticText "QA Sprint 3 FC" 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildReconnectViewModel, buildTimeline, fixtureStatusSummary, nextPhase, type MatchdaySessionView } from "./matchday-view-model";
+import {
+  buildReconnectViewModel,
+  buildTimeline,
+  fixtureStatusSummary,
+  nextPhase,
+  tacticalCommandAvailability,
+  tacticalCommandOptions,
+  type MatchdaySessionView,
+} from "./matchday-view-model";
 
 describe("matchday view model", () => {
   it("renders timeline progression from current phase", () => {
@@ -57,6 +65,7 @@ describe("matchday view model", () => {
         side: "away",
         connected: false,
       },
+      turns: [],
     };
 
     expect(buildReconnectViewModel(null, false)).toMatchObject({
@@ -115,10 +124,72 @@ describe("matchday view model", () => {
       createdByUserId: "user-home",
       participants: [],
       you: null,
+      turns: [],
     };
 
     expect(fixtureStatusSummary(waiting)).toBe("Waiting for opponent to join");
     expect(fixtureStatusSummary({ ...waiting, status: "active", phase: "first_half" })).toBe("Live in First Half");
     expect(fixtureStatusSummary({ ...waiting, status: "completed", phase: "fulltime" })).toBe("Fixture completed");
+  });
+
+  it("gates tactical command submission from authoritative session state", () => {
+    const base: MatchdaySessionView = {
+      id: "session-3",
+      roomCode: "ROOM99",
+      status: "active",
+      turnNumber: 5,
+      phase: "first_half",
+      activeSide: "home",
+      createdByUserId: "user-home",
+      participants: [],
+      you: {
+        userId: "user-home",
+        side: "home",
+        connected: true,
+      },
+      turns: [],
+    };
+
+    expect(tacticalCommandAvailability(base)).toMatchObject({
+      canSubmit: true,
+    });
+
+    expect(tacticalCommandAvailability({ ...base, activeSide: "away" })).toMatchObject({
+      canSubmit: false,
+      reason: "Wait for your turn to issue a command.",
+    });
+
+    expect(tacticalCommandAvailability({ ...base, phase: "lobby" })).toMatchObject({
+      canSubmit: false,
+      reason: "Commands are only available during live phases.",
+    });
+  });
+
+  it("returns tactical command options for each command type", () => {
+    expect(tacticalCommandOptions("mentality_shift").map((option) => option.value)).toEqual([
+      "Defensive",
+      "Cautious",
+      "Balanced",
+      "Attacking",
+      "All-out Attack",
+    ]);
+
+    expect(tacticalCommandOptions("tempo_shift").map((option) => option.value)).toEqual([
+      "Slow",
+      "Normal",
+      "Fast",
+    ]);
+
+    expect(tacticalCommandOptions("pressing_line").map((option) => option.value)).toEqual([
+      "Low",
+      "Medium",
+      "High",
+    ]);
+
+    expect(tacticalCommandOptions("width_shift").map((option) => option.value)).toEqual([
+      "Narrow",
+      "Normal",
+      "Wide",
+    ]);
   });
 });

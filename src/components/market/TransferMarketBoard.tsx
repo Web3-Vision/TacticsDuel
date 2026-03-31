@@ -156,12 +156,12 @@ export default function TransferMarketBoard({
   }
 
   return (
-    <div className="p-4 flex flex-col gap-3">
-      <div className="bg-surface border border-border rounded-md p-3">
+    <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
+      <section className="glass-panel panel-enter rounded-xl p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-xs text-text-dim uppercase tracking-wide">Transfer Market</p>
-            <p className="font-mono text-[11px] text-text-mid mt-1">
+            <p className="section-title">Transfer Market</p>
+            <p className="mt-1 font-mono text-xs text-text-mid">
               Browse active listings and place bids in real time.
             </p>
           </div>
@@ -169,47 +169,47 @@ export default function TransferMarketBoard({
             onClick={() => {
               loadListings().catch(() => undefined);
             }}
-            className="h-8 px-3 rounded-[4px] border border-border text-text-mid font-mono text-[10px] uppercase tracking-wide hover:border-border-light transition-colors duration-100"
+            className="h-8 rounded-md border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-mid transition-colors duration-150 hover:border-border-light"
           >
             Refresh
           </button>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Balance</p>
-            <p className="font-mono text-xs text-gold tabular-nums mt-0.5">{formatPrice(coins)}</p>
+          <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Balance</p>
+            <p className="mt-0.5 font-mono text-xs text-gold tabular-nums">{formatPrice(coins)}</p>
           </div>
-          <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-            <p className="font-mono text-[9px] text-text-dim uppercase">Open Listings</p>
-            <p className="font-mono text-xs text-text tabular-nums mt-0.5">{openListings.length}</p>
+          <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Open Listings</p>
+            <p className="mt-0.5 font-mono text-xs text-text tabular-nums">{openListings.length}</p>
           </div>
         </div>
-      </div>
+      </section>
 
       {requestState === "error" && (
-        <div className="bg-loss/10 border border-loss/40 rounded-md p-3">
+        <div className="rounded-md border border-loss/40 bg-loss/10 p-3">
           <p className="font-mono text-xs text-loss">{globalError || "Failed to load listings."}</p>
         </div>
       )}
 
       {requestState === "loading" && listings.length === 0 && (
-        <div className="bg-surface border border-border rounded-md p-3 space-y-2">
-          <div className="h-3 bg-border rounded-sm w-40 animate-pulse" />
-          <div className="h-3 bg-border rounded-sm w-32 animate-pulse" />
-          <div className="h-3 bg-border rounded-sm w-48 animate-pulse" />
+        <div className="glass-panel rounded-xl p-3 space-y-2">
+          <div className="h-3 w-40 rounded-sm loading-shimmer" />
+          <div className="h-3 w-32 rounded-sm loading-shimmer" />
+          <div className="h-3 w-48 rounded-sm loading-shimmer" />
         </div>
       )}
 
       {requestState !== "loading" && openListings.length === 0 && (
-        <div className="bg-surface border border-border rounded-md p-4 text-center">
+        <div className="glass-panel panel-enter rounded-xl p-4 text-center">
           <p className="font-mono text-xs text-text">No active listings right now.</p>
-          <p className="font-mono text-[10px] text-text-dim mt-1">
+          <p className="mt-1 font-mono text-[10px] text-text-dim">
             List players from your squad to seed the market.
           </p>
           <Link
             href="/club/team-hub"
-            className="inline-flex mt-3 h-8 px-3 items-center rounded-[4px] border border-border text-text-mid font-mono text-[10px] uppercase tracking-wide hover:border-border-light transition-colors duration-100"
+            className="mt-3 inline-flex h-8 items-center rounded-md border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-mid transition-colors duration-150 hover:border-border-light"
           >
             Open Team Hub
           </Link>
@@ -217,7 +217,7 @@ export default function TransferMarketBoard({
       )}
 
       {openListings.length > 0 && (
-        <div className="flex flex-col gap-2 pb-20">
+        <div className="flex flex-col gap-2">
           {openListings.map((listing) => {
             const player = getPlayerById(listing.player_id);
             const minBid = getMinimumBid(listing);
@@ -233,29 +233,29 @@ export default function TransferMarketBoard({
             const statusMessage = bidStatus[listing.id] ?? uiReason;
 
             return (
-              <article key={listing.id} className="bg-surface border border-border rounded-md p-3">
+              <article key={listing.id} className="glass-panel panel-enter rounded-xl p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-mono text-xs text-text">
                       {player?.name ?? listing.player_id}
                     </p>
-                    <p className="font-mono text-[10px] text-text-dim uppercase tracking-wide mt-0.5">
+                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-text-dim">
                       {player ? `${player.position} · OVR ${player.overall}` : "Unknown player"}
                     </p>
                   </div>
-                  <p className="font-mono text-[10px] text-text-dim uppercase">
+                  <p className="font-mono text-[10px] uppercase text-text-dim">
                     {formatTimeLeft(listing.expires_at)}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 mt-3">
-                  <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-                    <p className="font-mono text-[9px] text-text-dim uppercase">Ask</p>
-                    <p className="font-mono text-xs text-text tabular-nums mt-0.5">{formatPrice(listing.ask_price)}</p>
+                  <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Ask</p>
+                    <p className="mt-0.5 font-mono text-xs text-text tabular-nums">{formatPrice(listing.ask_price)}</p>
                   </div>
-                  <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-                    <p className="font-mono text-[9px] text-text-dim uppercase">Current</p>
-                    <p className="font-mono text-xs text-accent tabular-nums mt-0.5">{formatPrice(listing.current_price)}</p>
+                  <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Current</p>
+                    <p className="mt-0.5 font-mono text-xs text-accent tabular-nums">{formatPrice(listing.current_price)}</p>
                   </div>
                 </div>
 
@@ -268,7 +268,7 @@ export default function TransferMarketBoard({
                       setBidStatus((current) => ({ ...current, [listing.id]: "" }));
                     }}
                     inputMode="numeric"
-                    className="h-8 w-full bg-bg border border-border rounded-[4px] px-2.5 font-mono text-xs text-text tabular-nums focus:outline-none focus:border-accent"
+                    className="h-9 w-full rounded-md border border-border bg-bg/65 px-2.5 font-mono text-xs text-text tabular-nums focus:border-accent focus:outline-none"
                     aria-label={`Bid amount for ${player?.name ?? listing.player_id}`}
                   />
                   <button
@@ -276,13 +276,13 @@ export default function TransferMarketBoard({
                       submitBid(listing).catch(() => undefined);
                     }}
                     disabled={!guard.ok || submittingListingId === listing.id}
-                    className="shrink-0 h-8 px-3 rounded-[4px] font-mono text-[10px] uppercase tracking-wide transition-colors duration-100 bg-accent text-black hover:bg-accent-dim disabled:bg-border disabled:text-text-dim disabled:cursor-not-allowed"
+                    className="h-9 shrink-0 rounded-md bg-accent px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-black transition-colors duration-150 hover:bg-accent-dim disabled:cursor-not-allowed disabled:bg-border disabled:text-text-dim"
                   >
                     {submittingListingId === listing.id ? "Bidding" : "Bid"}
                   </button>
                 </div>
 
-                <p className="font-mono text-[10px] text-text-dim mt-1">
+                <p className="mt-1 font-mono text-[10px] text-text-dim">
                   Minimum bid: {formatPrice(minBid)}
                 </p>
 

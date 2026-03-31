@@ -3,6 +3,7 @@ import {
   SessionError,
   disconnect,
   createRoom,
+  getSessionForUser,
   joinRoom,
   reconnect,
   submitTurn,
@@ -34,7 +35,7 @@ describe("multiplayer session service smoke tests", () => {
     expect(activeSession.participants).toHaveLength(2);
 
     const afterHomeTurn = submitTurn(activeSession.id, homeUserId, 1, {
-      action: "attack",
+      action: "phase_transition",
       transitionToPhase: "halftime",
     });
     expect(afterHomeTurn.turnNumber).toBe(2);
@@ -47,7 +48,7 @@ describe("multiplayer session service smoke tests", () => {
     );
 
     const afterAwayTurn = submitTurn(activeSession.id, awayUserId, 2, {
-      action: "counter",
+      action: "phase_transition",
       transitionToPhase: "second_half",
     });
     expect(afterAwayTurn.turnNumber).toBe(3);
@@ -88,5 +89,115 @@ describe("multiplayer session service smoke tests", () => {
     const reconnected = reconnect(activeSession.id, awayUserId);
     const awayAfterReconnect = reconnected.participants.find((participant) => participant.userId === awayUserId);
     expect(awayAfterReconnect?.connected).toBe(true);
+  });
+
+  it("persists deterministic command hashes for identical command payloads", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+
+    const createdOne = createRoom(homeUserId, "match-deterministic-1");
+    const activeOne = joinRoom(awayUserId, createdOne.roomCode);
+    const afterTurnOne = submitTurn(activeOne.id, homeUserId, 1, {
+      action: "formation_change",
+      formation: "4-4-2",
+    });
+    const firstHash = String(afterTurnOne.turns.at(-1)?.payload.commandHash ?? "");
+    expect(firstHash).toMatch(/^[a-f0-9]{8}$/);
+
+    const createdTwo = createRoom(homeUserId, "match-deterministic-2");
+    const activeTwo = joinRoom(awayUserId, createdTwo.roomCode);
+    const afterTurnTwo = submitTurn(activeTwo.id, homeUserId, 1, {
+      action: "formation_change",
+      formation: "4-4-2",
+    });
+    const secondHash = String(afterTurnTwo.turns.at(-1)?.payload.commandHash ?? "");
+
+    expect(secondHash).toBe(firstHash);
+  });
+
+  it("enforces substitution anti-exploit limits", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const created = createRoom(homeUserId, "match-subs-1");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    let turn = 1;
+    for (let i = 0; i < 5; i += 1) {
+      submitTurn(activeSession.id, homeUserId, turn, {
+        action: "substitution",
+        outPlayerId: `homeOut${i + 1}`,
+        inPlayerId: `homeIn${i + 1}`,
+        minute: 55 + i,
+      });
+      turn += 1;
+      submitTurn(activeSession.id, awayUserId, turn, {
+        action: "play_style_change",
+        playStyle: i % 2 === 0 ? "balanced" : "counter",
+      });
+      turn += 1;
+    }
+
+    expectSessionError(
+      () =>
+        submitTurn(activeSession.id, homeUserId, turn, {
+          action: "substitution",
+          outPlayerId: "homeOut6",
+          inPlayerId: "homeIn6",
+        }),
+      "INVALID_ACTION",
+    );
+  });
+
+  it("rejects duplicate set-piece role assignments inside one command", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const created = createRoom(homeUserId, "match-roles-1");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    expectSessionError(
+      () =>
+        submitTurn(activeSession.id, homeUserId, 1, {
+          action: "set_piece_roles",
+          roles: {
+            captain: "player01",
+            penaltyTaker: "player01",
+          },
+        }),
+      "INVALID_ACTION",
+    );
+  });
+
+  it("rejects unsupported command actions", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const created = createRoom(homeUserId, "match-action-1");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    expectSessionError(
+      () =>
+        submitTurn(activeSession.id, homeUserId, 1, {
+          action: "teleport_ball",
+        }),
+      "INVALID_ACTION",
+    );
+  });
+
+  it("stores normalized command envelope fields on turn payload", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const created = createRoom(homeUserId, "match-envelope-1");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    submitTurn(activeSession.id, homeUserId, 1, {
+      action: "play_style_change",
+      playStyle: "HIGH_PRESS",
+    });
+
+    const session = getSessionForUser(activeSession.id, homeUserId);
+    const payload = session.turns[0]?.payload;
+    expect(payload.commandType).toBe("play_style_change");
+    expect(payload.commandVersion).toBe(1);
+    expect(payload.playStyle).toBe("high_press");
+    expect(typeof payload.commandHash).toBe("string");
   });
 });
