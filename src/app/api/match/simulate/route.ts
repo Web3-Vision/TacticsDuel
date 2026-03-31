@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     }
 
     // Resolve squads
-    let homeSquad = resolveSquad(match.home_squad as unknown[]);
+    const homeSquad = resolveSquad(match.home_squad as unknown[]);
     let awaySquad = resolveSquad(match.away_squad as unknown[]);
     const homeTactics = resolveTactics(match.home_tactics);
     let awayTactics = resolveTactics(match.away_tactics);

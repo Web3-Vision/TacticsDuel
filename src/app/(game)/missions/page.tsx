@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Target, Gift, Clock, CheckCircle } from "lucide-react";
 
@@ -22,16 +22,19 @@ export default function MissionsPage() {
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchMissions();
-  }, []);
-
-  async function fetchMissions() {
+  const fetchMissions = useCallback(async () => {
     const res = await fetch("/api/missions");
     const data = await res.json();
     setMissions(data.missions ?? []);
     setLoading(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchMissions();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchMissions]);
 
   async function claimMission(missionId: string) {
     setClaiming(missionId);
