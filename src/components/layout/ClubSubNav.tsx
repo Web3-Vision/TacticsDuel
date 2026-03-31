@@ -5,9 +5,10 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const tabs = [
+  { href: "/club/team-hub", label: "Team Hub" },
   { href: "/club/squad", label: "Squad" },
   { href: "/club/tactics", label: "Tactics" },
-  { href: "/club/players", label: "Transfers" },
+  { href: "/club/market", label: "Market" },
   { href: "/club/leaderboard", label: "Leaderboard" },
 ];
 

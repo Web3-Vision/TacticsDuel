@@ -10,15 +10,18 @@ import type { MatchConfig, PhaseResult } from "@/lib/types";
 let storedConfig: MatchConfig | null = null;
 let storedFirstHalfResult: PhaseResult | null = null;
 let storedSeed: number | null = null;
+let storedRngState: number | null = null;
 
 export function setInteractiveMatchData(
   config: MatchConfig,
   firstHalfResult: PhaseResult,
-  seed: number
+  seed: number,
+  rngState?: number,
 ) {
   storedConfig = config;
   storedFirstHalfResult = firstHalfResult;
   storedSeed = seed;
+  storedRngState = rngState ?? null;
 }
 
 export default function LiveMatchPage() {
@@ -34,6 +37,7 @@ export default function LiveMatchPage() {
       override,
       null, // AI away tactics are auto-determined
       storedSeed,
+      storedRngState ?? undefined,
     );
 
     // Append second half events to the match store
@@ -53,6 +57,7 @@ export default function LiveMatchPage() {
     storedConfig = null;
     storedFirstHalfResult = null;
     storedSeed = null;
+    storedRngState = null;
   }, []);
 
   return (

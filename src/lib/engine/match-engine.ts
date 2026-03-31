@@ -9,18 +9,27 @@ import type {
 import {
   calculateTeamRatings,
   applyTacticalModifiers,
-  type ModifiedRatings,
 } from "./team-strength";
 import { generateCommentary, generateAtmosphericCommentary } from "./match-events";
 
-// Seeded PRNG (mulberry32)
-function mulberry32(seed: number): () => number {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+interface DeterministicRng {
+  next: () => number;
+  getState: () => number;
+}
+
+// Seeded PRNG (mulberry32) with explicit state access for deterministic resumes.
+function createDeterministicRng(seed: number, initialState?: number): DeterministicRng {
+  let state = (initialState ?? seed) | 0;
+
+  return {
+    next: () => {
+      state |= 0;
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
+    getState: () => state,
   };
 }
 
@@ -470,7 +479,7 @@ function simulatePhase(
 
 // Full match simulation (backward compatible)
 export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
-  const rng = mulberry32(seed ?? Math.floor(Math.random() * 2147483647));
+  const rng = createDeterministicRng(seed ?? Math.floor(Math.random() * 2147483647));
 
   const events: MatchEvent[] = [];
 
@@ -484,7 +493,7 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
   });
 
   // First half (1-45)
-  const firstHalf = simulatePhase(1, 45, config, config.homeTactics, config.awayTactics, rng);
+  const firstHalf = simulatePhase(1, 45, config, config.homeTactics, config.awayTactics, rng.next);
   events.push(...firstHalf.events);
 
   // Halftime
@@ -513,7 +522,7 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
   }
 
   // Second half (46-90)
-  const secondHalf = simulatePhase(46, 90, config, secondHalfHomeTactics, secondHalfAwayTactics, rng, firstHalf);
+  const secondHalf = simulatePhase(46, 90, config, secondHalfHomeTactics, secondHalfAwayTactics, rng.next, firstHalf);
   events.push(...secondHalf.events);
 
   // Full time
@@ -542,8 +551,8 @@ export function simulateMatch(config: MatchConfig, seed?: number): MatchResult {
     awayYellowCards: secondHalf.awayYellows,
     homeRedCards: secondHalf.homeReds,
     awayRedCards: secondHalf.awayReds,
-    homePassAccuracy: Math.round(65 + (secondHalf.homePossCount / Math.max(1, totalPoss)) * 20 + rng() * 8),
-    awayPassAccuracy: Math.round(65 + (secondHalf.awayPossCount / Math.max(1, totalPoss)) * 20 + rng() * 8),
+    homePassAccuracy: Math.round(65 + (secondHalf.homePossCount / Math.max(1, totalPoss)) * 20 + rng.next() * 8),
+    awayPassAccuracy: Math.round(65 + (secondHalf.awayPossCount / Math.max(1, totalPoss)) * 20 + rng.next() * 8),
   };
 
   // Player ratings
@@ -579,9 +588,10 @@ export function simulateFirstHalf(config: MatchConfig, seed?: number): {
   result: PhaseResult;
   events: MatchEvent[];
   seed: number;
+  rngState: number;
 } {
   const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
-  const rng = mulberry32(actualSeed);
+  const rng = createDeterministicRng(actualSeed);
 
   const events: MatchEvent[] = [{
     minute: 0,
@@ -591,7 +601,7 @@ export function simulateFirstHalf(config: MatchConfig, seed?: number): {
     isKeyEvent: true,
   }];
 
-  const firstHalf = simulatePhase(1, 45, config, config.homeTactics, config.awayTactics, rng);
+  const firstHalf = simulatePhase(1, 45, config, config.homeTactics, config.awayTactics, rng.next);
   events.push(...firstHalf.events);
 
   events.push({
@@ -602,7 +612,7 @@ export function simulateFirstHalf(config: MatchConfig, seed?: number): {
     isKeyEvent: true,
   });
 
-  return { result: firstHalf, events, seed: actualSeed };
+  return { result: firstHalf, events, seed: actualSeed, rngState: rng.getState() };
 }
 
 export function simulateSecondHalf(
@@ -611,12 +621,9 @@ export function simulateSecondHalf(
   homeTacticsOverride: TacticalOverride | null,
   awayTacticsOverride: TacticalOverride | null,
   seed: number,
+  firstHalfRngState?: number,
 ): MatchResult {
-  // We need to recreate the RNG in the same state
-  // Since we used the same seed, we replay through first half RNG calls
-  const rng = mulberry32(seed);
-  // Fast-forward RNG through first half (approximate — consume same number of random calls)
-  for (let i = 0; i < 500; i++) rng();
+  const rng = createDeterministicRng(seed, firstHalfRngState);
 
   let homeTactics = { ...config.homeTactics };
   let awayTactics = { ...config.awayTactics };
@@ -667,7 +674,7 @@ export function simulateSecondHalf(
     });
   }
 
-  const secondHalf = simulatePhase(46, 90, config, homeTactics, awayTactics, rng, firstHalfResult);
+  const secondHalf = simulatePhase(46, 90, config, homeTactics, awayTactics, rng.next, firstHalfResult);
   events.push(...secondHalf.events);
 
   events.push({
@@ -694,8 +701,8 @@ export function simulateSecondHalf(
     awayYellowCards: secondHalf.awayYellows,
     homeRedCards: secondHalf.homeReds,
     awayRedCards: secondHalf.awayReds,
-    homePassAccuracy: Math.round(65 + (secondHalf.homePossCount / Math.max(1, totalPoss)) * 20 + rng() * 8),
-    awayPassAccuracy: Math.round(65 + (secondHalf.awayPossCount / Math.max(1, totalPoss)) * 20 + rng() * 8),
+    homePassAccuracy: Math.round(65 + (secondHalf.homePossCount / Math.max(1, totalPoss)) * 20 + rng.next() * 8),
+    awayPassAccuracy: Math.round(65 + (secondHalf.awayPossCount / Math.max(1, totalPoss)) * 20 + rng.next() * 8),
   };
 
   const allPlayers = [...config.homeSquad, ...config.awaySquad];

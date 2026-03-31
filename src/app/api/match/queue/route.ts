@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { Player, Tactics } from "@/lib/types";
+import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
+import type { Tactics } from "@/lib/types";
 
 // Ghost opponent generation (server-side, no client imports)
 function generateGhostTactics(): Tactics {
@@ -24,38 +25,61 @@ const GHOST_WAIT_THRESHOLD = 30; // seconds before generating ghost
 
 // POST: Join matchmaking queue
 export async function POST() {
+  const traceId = createTraceId();
+  const startedAtMs = Date.now();
+  const respond = (payload: unknown, status: number, context?: Record<string, string | number>, errorCode?: string) => {
+    recordApiResult({
+      service: "match.queue",
+      operation: "POST",
+      traceId,
+      startedAtMs,
+      status,
+      context,
+      errorCode,
+    });
+    const response = NextResponse.json(payload, { status });
+    response.headers.set("x-trace-id", traceId);
+    return response;
+  };
+
   try {
+    const timings: Record<string, number> = {};
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return respond({ error: "Unauthorized" }, 401);
     }
 
     // Get profile
+    const profileLookupStartedAt = Date.now();
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
+    timings.profileLookupMs = Date.now() - profileLookupStartedAt;
 
     if (!profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      return respond({ error: "Profile not found" }, 404, { userId: user.id, ...timings }, "PROFILE_NOT_FOUND");
     }
 
     // Check if already in queue
+    const queueLookupStartedAt = Date.now();
     const { data: existing } = await supabase
       .from("matchmaking_queue")
       .select("id")
       .eq("user_id", user.id)
       .single();
+    timings.queueLookupMs = Date.now() - queueLookupStartedAt;
 
     if (existing) {
-      return NextResponse.json({ error: "Already in queue" }, { status: 409 });
+      return respond({ error: "Already in queue" }, 409, { userId: user.id, ...timings }, "ALREADY_IN_QUEUE");
     }
 
     // Add to queue
+    const queueInsertStartedAt = Date.now();
     const { error: insertError } = await supabase
       .from("matchmaking_queue")
       .insert({
@@ -63,51 +87,87 @@ export async function POST() {
         elo_rating: profile.elo_rating,
         division: profile.division,
       });
+    timings.queueInsertMs = Date.now() - queueInsertStartedAt;
 
     if (insertError) {
-      return NextResponse.json(
+      return respond(
         { error: "Failed to join queue" },
-        { status: 500 }
+        500,
+        { userId: user.id, ...timings },
+        "QUEUE_INSERT_FAILED"
       );
     }
 
     // Try to find a match immediately
+    const matchmakingStartedAt = Date.now();
     const match = await tryFindMatch(supabase, user.id, profile.elo_rating);
+    timings.matchmakingMs = Date.now() - matchmakingStartedAt;
+    if (match?.id) {
+      logDomainEvent({
+        service: "match.queue",
+        event: "match_found_immediately",
+        traceId,
+        context: { userId: user.id, matchId: match.id },
+      });
+    }
 
-    return NextResponse.json({
+    return respond({
       queued: true,
       matchFound: !!match,
       matchId: match?.id ?? null,
-    });
+    }, 200, { userId: user.id, matchFound: Number(Boolean(match)), ...timings });
   } catch (error) {
     console.error("Queue error:", error);
-    return NextResponse.json(
+    return respond(
       { error: "Internal server error" },
-      { status: 500 }
+      500,
+      undefined,
+      "INTERNAL_ERROR"
     );
   }
 }
 
 // GET: Check queue status
 export async function GET() {
+  const traceId = createTraceId();
+  const startedAtMs = Date.now();
+  const respond = (payload: unknown, status: number, context?: Record<string, string | number>, errorCode?: string) => {
+    recordApiResult({
+      service: "match.queue",
+      operation: "GET",
+      traceId,
+      startedAtMs,
+      status,
+      context,
+      errorCode,
+    });
+    const response = NextResponse.json(payload, { status });
+    response.headers.set("x-trace-id", traceId);
+    return response;
+  };
+
   try {
+    const timings: Record<string, number> = {};
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return respond({ error: "Unauthorized" }, 401);
     }
 
     // Check if still in queue
+    const queueLookupStartedAt = Date.now();
     const { data: queueEntry } = await supabase
       .from("matchmaking_queue")
       .select("*")
       .eq("user_id", user.id)
       .single();
+    timings.queueLookupMs = Date.now() - queueLookupStartedAt;
 
     if (!queueEntry) {
       // Check for pending/recent match
+      const recentMatchLookupStartedAt = Date.now();
       const { data: recentMatch } = await supabase
         .from("matches")
         .select("id, status")
@@ -116,16 +176,17 @@ export async function GET() {
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
+      timings.recentMatchLookupMs = Date.now() - recentMatchLookupStartedAt;
 
       if (recentMatch) {
-        return NextResponse.json({
+        return respond({
           inQueue: false,
           matchFound: true,
           matchId: recentMatch.id,
-        });
+        }, 200, { userId: user.id, matchFound: 1, ...timings });
       }
 
-      return NextResponse.json({ inQueue: false, matchFound: false });
+      return respond({ inQueue: false, matchFound: false }, 200, { userId: user.id, matchFound: 0, ...timings });
     }
 
     const waitSeconds = Math.round(
@@ -133,79 +194,112 @@ export async function GET() {
     );
 
     // Try matchmaking with real opponent
+    const profileLookupStartedAt = Date.now();
     const { data: profileData } = await supabase
       .from("profiles")
       .select("elo_rating")
       .eq("id", user.id)
       .single();
+    timings.profileLookupMs = Date.now() - profileLookupStartedAt;
 
+    const matchmakingStartedAt = Date.now();
     const match = await tryFindMatch(
       supabase,
       user.id,
       profileData?.elo_rating ?? 1000,
       queueEntry.joined_at
     );
+    timings.matchmakingMs = Date.now() - matchmakingStartedAt;
 
     if (match) {
-      return NextResponse.json({
+      return respond({
         inQueue: false,
         matchFound: true,
         matchId: match.id,
         waitTime: waitSeconds,
-      });
+      }, 200, { userId: user.id, matchFound: 1, waitSeconds, ...timings });
     }
 
     // Ghost opponent fallback after threshold
     if (waitSeconds >= GHOST_WAIT_THRESHOLD) {
+      const ghostMatchCreateStartedAt = Date.now();
       const ghostMatch = await createGhostMatch(
         supabase,
         user.id,
         profileData?.elo_rating ?? 1000
       );
+      timings.ghostMatchCreateMs = Date.now() - ghostMatchCreateStartedAt;
       if (ghostMatch) {
+        logDomainEvent({
+          service: "match.queue",
+          event: "ghost_match_created",
+          traceId,
+          context: { userId: user.id, matchId: ghostMatch.id, waitSeconds },
+        });
         // Remove from queue
         await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
-        return NextResponse.json({
+        return respond({
           inQueue: false,
           matchFound: true,
           matchId: ghostMatch.id,
           waitTime: waitSeconds,
-        });
+        }, 200, { userId: user.id, matchFound: 1, waitSeconds, ...timings });
       }
     }
 
-    return NextResponse.json({
+    return respond({
       inQueue: true,
       matchFound: false,
       waitTime: waitSeconds,
-    });
+    }, 200, { userId: user.id, matchFound: 0, waitSeconds, ...timings });
   } catch (error) {
     console.error("Queue check error:", error);
-    return NextResponse.json(
+    return respond(
       { error: "Internal server error" },
-      { status: 500 }
+      500,
+      undefined,
+      "INTERNAL_ERROR"
     );
   }
 }
 
 // DELETE: Leave queue
 export async function DELETE() {
+  const traceId = createTraceId();
+  const startedAtMs = Date.now();
+  const respond = (payload: unknown, status: number, context?: Record<string, string | number>, errorCode?: string) => {
+    recordApiResult({
+      service: "match.queue",
+      operation: "DELETE",
+      traceId,
+      startedAtMs,
+      status,
+      context,
+      errorCode,
+    });
+    const response = NextResponse.json(payload, { status });
+    response.headers.set("x-trace-id", traceId);
+    return response;
+  };
+
   try {
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return respond({ error: "Unauthorized" }, 401);
     }
 
     await supabase.from("matchmaking_queue").delete().eq("user_id", user.id);
 
-    return NextResponse.json({ success: true });
+    return respond({ success: true }, 200, { userId: user.id });
   } catch {
-    return NextResponse.json(
+    return respond(
       { error: "Internal server error" },
-      { status: 500 }
+      500,
+      undefined,
+      "INTERNAL_ERROR"
     );
   }
 }

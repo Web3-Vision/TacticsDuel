@@ -5,6 +5,7 @@ import { calculateEloChange, calculateDivisionPoints } from "@/lib/engine/elo";
 import { PLAYERS } from "@/lib/data/players";
 import { generateAISquad, generateAITactics } from "@/lib/engine/ai-opponent";
 import { getFormation } from "@/lib/data/formations";
+import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
 import type { Player, Tactics } from "@/lib/types";
 
 // Resolve squad rows (from DB) to Player objects
@@ -44,62 +45,95 @@ function resolveTactics(data: unknown): Tactics {
 }
 
 export async function POST(request: Request) {
+  const traceId = createTraceId();
+  const startedAtMs = Date.now();
+  const respond = (payload: unknown, status: number, context?: Record<string, string | number>, errorCode?: string) => {
+    recordApiResult({
+      service: "match.simulate",
+      operation: "POST",
+      traceId,
+      startedAtMs,
+      status,
+      context,
+      errorCode,
+    });
+    const response = NextResponse.json(payload, { status });
+    response.headers.set("x-trace-id", traceId);
+    return response;
+  };
+
   try {
+    const timings: Record<string, number> = {};
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return respond({ error: "Unauthorized" }, 401);
     }
 
     const body = await request.json();
     const { matchId } = body;
 
     if (!matchId) {
-      return NextResponse.json({ error: "Missing matchId" }, { status: 400 });
+      return respond({ error: "Missing matchId" }, 400, { userId: user.id }, "MISSING_MATCH_ID");
     }
 
     // Get match record
+    const matchLookupStartedAt = Date.now();
     const { data: match, error: matchError } = await supabase
       .from("matches")
       .select("*")
       .eq("id", matchId)
       .single();
+    timings.matchLookupMs = Date.now() - matchLookupStartedAt;
 
     if (matchError || !match) {
-      return NextResponse.json({ error: "Match not found" }, { status: 404 });
+      return respond({ error: "Match not found" }, 404, { userId: user.id, matchId, ...timings }, "MATCH_NOT_FOUND");
     }
 
     if (match.status !== "accepted" && match.status !== "pending") {
-      return NextResponse.json(
+      return respond(
         { error: "Match already simulated" },
-        { status: 400 }
+        400,
+        { userId: user.id, matchId, matchStatus: match.status, ...timings },
+        "MATCH_ALREADY_SIMULATED"
       );
     }
 
     // Resolve squads
+    const squadResolveStartedAt = Date.now();
     const homeSquad = resolveSquad(match.home_squad as unknown[]);
     let awaySquad = resolveSquad(match.away_squad as unknown[]);
     const homeTactics = resolveTactics(match.home_tactics);
     let awayTactics = resolveTactics(match.away_tactics);
+    timings.squadResolveMs = Date.now() - squadResolveStartedAt;
 
     // If away squad is empty (ghost match), generate AI squad
     if (awaySquad.length === 0) {
+      const aiAwaySquadStartedAt = Date.now();
       const formation = getFormation(awayTactics.formation || "4-3-3");
       const positions = formation.slots.map((s) => s.position);
       awaySquad = generateAISquad(PLAYERS, positions);
       if (!awayTactics.mentality) {
         awayTactics = generateAITactics();
       }
+      timings.aiAwaySquadMs = Date.now() - aiAwaySquadStartedAt;
+      logDomainEvent({
+        service: "match.simulate",
+        event: "ai_away_squad_generated",
+        traceId,
+        context: { matchId },
+      });
     }
 
     // Ensure we have valid squads
     if (homeSquad.length === 0) {
-      return NextResponse.json({ error: "Home squad is empty" }, { status: 400 });
+      return respond({ error: "Home squad is empty" }, 400, { userId: user.id, matchId, ...timings }, "EMPTY_HOME_SQUAD");
     }
 
     // Simulate
+    const simulationStartedAt = Date.now();
     const result = simulateMatch({
       homeSquad,
       awaySquad,
@@ -107,6 +141,7 @@ export async function POST(request: Request) {
       awayTactics,
       matchType: match.match_type,
     });
+    timings.simulationMs = Date.now() - simulationStartedAt;
 
     // Determine result for each player
     const homeResult =
@@ -137,11 +172,13 @@ export async function POST(request: Request) {
       );
 
       // Get home profile for streak
+      const rankedHomeProfileLookupStartedAt = Date.now();
       const { data: homeProfile } = await supabase
         .from("profiles")
         .select("current_streak")
         .eq("id", match.home_user_id)
         .single();
+      timings.rankedHomeProfileLookupMs = Date.now() - rankedHomeProfileLookupStartedAt;
 
       homeDivPointsChange = calculateDivisionPoints(
         homeResult,
@@ -158,6 +195,7 @@ export async function POST(request: Request) {
     }
 
     // Update match record
+    const matchUpdateStartedAt = Date.now();
     await supabase
       .from("matches")
       .update({
@@ -178,9 +216,11 @@ export async function POST(request: Request) {
         completed_at: new Date().toISOString(),
       })
       .eq("id", matchId);
+    timings.matchUpdateMs = Date.now() - matchUpdateStartedAt;
 
     // Update player profiles for ranked
     if (match.match_type === "ranked") {
+      const rankedProfilesUpdateStartedAt = Date.now();
       // Home player
       const { data: homeProfile } = await supabase
         .from("profiles")
@@ -289,9 +329,10 @@ export async function POST(request: Request) {
             .eq("id", match.away_user_id);
         }
       }
+      timings.rankedProfilesUpdateMs = Date.now() - rankedProfilesUpdateStartedAt;
     }
 
-    return NextResponse.json({
+    return respond({
       success: true,
       result: {
         homeScore: result.homeScore,
@@ -305,12 +346,14 @@ export async function POST(request: Request) {
         homeDivPointsChange,
         awayDivPointsChange,
       },
-    });
+    }, 200, { userId: user.id, matchId, matchType: match.match_type, ...timings });
   } catch (error) {
     console.error("Match simulation error:", error);
-    return NextResponse.json(
+    return respond(
       { error: "Internal server error" },
-      { status: 500 }
+      500,
+      undefined,
+      "INTERNAL_ERROR"
     );
   }
 }

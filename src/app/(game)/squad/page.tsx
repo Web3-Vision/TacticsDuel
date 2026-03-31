@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import SquadHubPage from "@/components/squad/SquadHubPage";
 
-export default function SquadRedirect() {
-  redirect("/club/squad");
+export default function SquadPage() {
+  return <SquadHubPage />;
 }

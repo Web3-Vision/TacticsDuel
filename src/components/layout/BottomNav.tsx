@@ -9,8 +9,8 @@ const tabs = [
   { href: "/home", label: "Home", icon: LayoutGrid },
   { href: "/play", label: "Play", icon: PlayCircle },
   { href: "/club/squad", label: "Squad", icon: Users },
-  { href: "/club/players", label: "Market", icon: ShoppingBag },
-  { href: "/club", label: "Club", icon: Trophy },
+  { href: "/club/market", label: "Market", icon: ShoppingBag },
+  { href: "/club/team-hub", label: "Hub", icon: Trophy },
 ];
 
 export default function BottomNav() {
@@ -24,13 +24,16 @@ export default function BottomNav() {
           if (tab.href === "/home") {
             isActive = pathname === "/home";
           } else if (tab.href === "/play") {
-            isActive = pathname.startsWith("/play") || pathname.startsWith("/match");
+            isActive =
+              pathname.startsWith("/play") ||
+              pathname.startsWith("/match") ||
+              pathname.startsWith("/matchday");
           } else if (tab.href === "/club/squad") {
             isActive = pathname === "/club/squad" || pathname === "/club/tactics";
-          } else if (tab.href === "/club/players") {
-            isActive = pathname === "/club/players";
-          } else if (tab.href === "/club") {
-            isActive = pathname === "/club" || pathname === "/club/leaderboard";
+          } else if (tab.href === "/club/market") {
+            isActive = pathname === "/club/market" || pathname === "/club/players";
+          } else if (tab.href === "/club/team-hub") {
+            isActive = pathname === "/club/team-hub" || pathname === "/club" || pathname === "/club/leaderboard";
           }
 
           const Icon = tab.icon;
