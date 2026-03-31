@@ -16,7 +16,7 @@ interface MatchViewerProps {
 }
 
 export default function MatchViewer({ onHalftimeIntervention, interactive = false }: MatchViewerProps) {
-  const { isPlaying, isFinished, speed, tick, visibleEvents, homeScore, awayScore, stats } = useMatchStore();
+  const { isPlaying, isFinished, speed, homeScore, awayScore, stats } = useMatchStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showIntervention, setShowIntervention] = useState(false);
   const interventionShownRef = useRef(false);

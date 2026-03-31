@@ -1,36 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useMatchStore } from "@/lib/stores/match-store";
 import { getFormation } from "@/lib/data/formations";
 
 export default function MatchPitch() {
   const { homeFormation, awayFormation, currentPossession, visibleEvents, isFinished } =
     useMatchStore();
-  const [goalFlash, setGoalFlash] = useState<{ team: "home" | "away"; x: number; y: number } | null>(null);
 
   const homeFm = getFormation(homeFormation);
   const awayFm = getFormation(awayFormation);
+  const lastEvent = visibleEvents[visibleEvents.length - 1];
+  const goalFlash = lastEvent?.type === "goal" ? lastEvent : null;
 
   // Possession shift offset
   const homeShift = currentPossession === "home" ? -3 : 3;
   const awayShift = currentPossession === "away" ? -3 : 3;
-
-  // Goal flash effect
-  useEffect(() => {
-    if (visibleEvents.length === 0) return;
-    const lastEvent = visibleEvents[visibleEvents.length - 1];
-    if (lastEvent.type === "goal") {
-      const isHome = lastEvent.team === "home";
-      setGoalFlash({
-        team: lastEvent.team as "home" | "away",
-        x: 50,
-        y: isHome ? 5 : 95,
-      });
-      const timer = setTimeout(() => setGoalFlash(null), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [visibleEvents.length]);
 
   if (isFinished) return null;
 
@@ -96,6 +80,7 @@ export default function MatchPitch() {
         {goalFlash && (
           <>
             <text
+              key={`goal-flash-${goalFlash.minute}-${visibleEvents.length}`}
               x={goalFlash.team === "home" ? 185 : 15}
               y="62"
               textAnchor="middle"

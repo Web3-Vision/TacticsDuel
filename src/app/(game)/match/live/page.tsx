@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { useMatchStore } from "@/lib/stores/match-store";
 import { simulateSecondHalf, type TacticalOverride } from "@/lib/engine/match-engine";
 import MatchViewer from "@/components/match/MatchViewer";
@@ -22,8 +22,7 @@ export function setInteractiveMatchData(
 }
 
 export default function LiveMatchPage() {
-  const loadMatch = useMatchStore((s) => s.loadMatch);
-  const isInteractive = useRef(!!storedConfig);
+  const isInteractive = !!storedConfig;
 
   const handleHalftimeIntervention = useCallback((override: TacticalOverride | null) => {
     if (!storedConfig || !storedFirstHalfResult || storedSeed === null) return;
@@ -58,7 +57,7 @@ export default function LiveMatchPage() {
 
   return (
     <MatchViewer
-      interactive={isInteractive.current}
+      interactive={isInteractive}
       onHalftimeIntervention={handleHalftimeIntervention}
     />
   );
