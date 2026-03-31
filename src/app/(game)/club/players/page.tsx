@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSquadStore } from "@/lib/stores/squad-store";
-import { cn, formatPrice, positionColor } from "@/lib/utils";
+import { cn, formatPrice, positionColor, getCardTier } from "@/lib/utils";
 import PlayerDetail from "@/components/squad/PlayerDetail";
 import BudgetBar from "@/components/squad/BudgetBar";
 import type { Player, Position } from "@/lib/types";
 
 type Tab = "market" | "my-players";
+type SortOption = "rating-desc" | "rating-asc" | "price-desc" | "price-asc" | "name-asc";
+type RatingFilter = "ALL" | "bronze" | "silver" | "gold" | "elite";
 
 const POSITION_FILTERS: { value: Position | "ALL"; label: string }[] = [
   { value: "ALL", label: "ALL" },
@@ -20,6 +22,43 @@ const POSITION_FILTERS: { value: Position | "ALL"; label: string }[] = [
   { value: "RW", label: "RW" },
   { value: "ST", label: "ST" },
 ];
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "rating-desc", label: "OVR ↓" },
+  { value: "rating-asc", label: "OVR ↑" },
+  { value: "price-desc", label: "Price ↓" },
+  { value: "price-asc", label: "Price ↑" },
+  { value: "name-asc", label: "A-Z" },
+];
+
+const RATING_FILTERS: { value: RatingFilter; label: string }[] = [
+  { value: "ALL", label: "All" },
+  { value: "elite", label: "Elite 86+" },
+  { value: "gold", label: "Gold 80-85" },
+  { value: "silver", label: "Silver 70-79" },
+  { value: "bronze", label: "Bronze <70" },
+];
+
+function sortPlayers(players: Player[], sortBy: SortOption): Player[] {
+  const sorted = [...players];
+  switch (sortBy) {
+    case "rating-desc": return sorted.sort((a, b) => b.overall - a.overall);
+    case "rating-asc": return sorted.sort((a, b) => a.overall - b.overall);
+    case "price-desc": return sorted.sort((a, b) => b.marketValue - a.marketValue);
+    case "price-asc": return sorted.sort((a, b) => a.marketValue - b.marketValue);
+    case "name-asc": return sorted.sort((a, b) => a.name.localeCompare(b.name));
+  }
+}
+
+function filterByRating(players: Player[], filter: RatingFilter): Player[] {
+  switch (filter) {
+    case "elite": return players.filter((p) => p.overall >= 86);
+    case "gold": return players.filter((p) => p.overall >= 80 && p.overall <= 85);
+    case "silver": return players.filter((p) => p.overall >= 70 && p.overall <= 79);
+    case "bronze": return players.filter((p) => p.overall < 70);
+    default: return players;
+  }
+}
 
 export default function TransfersPage() {
   const {
@@ -39,6 +78,9 @@ export default function TransfersPage() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("market");
   const [posFilter, setPosFilter] = useState<Position | "ALL">("ALL");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("rating-desc");
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>("ALL");
   const [detailPlayer, setDetailPlayer] = useState<Player | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | string>("");
@@ -73,15 +115,30 @@ export default function TransfersPage() {
   // Market players = all players not in squad
   const marketPlayers = allPlayers.filter((p) => !isPlayerInSquad(p.id));
 
-  // Apply position filter
-  const filteredMarket =
-    posFilter === "ALL" ? marketPlayers : marketPlayers.filter((p) => p.position === posFilter);
-  const filteredOwned =
-    posFilter === "ALL" ? ownedPlayers : ownedPlayers.filter((o) => o.player.position === posFilter);
+  // Apply all filters and sort
+  const filteredMarket = useMemo(() => {
+    let result = marketPlayers;
+    if (posFilter !== "ALL") result = result.filter((p) => p.position === posFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((p) => p.name.toLowerCase().includes(q) || p.fullName.toLowerCase().includes(q));
+    }
+    result = filterByRating(result, ratingFilter);
+    return sortPlayers(result, sortBy);
+  }, [marketPlayers, posFilter, search, ratingFilter, sortBy]);
+
+  const filteredOwned = useMemo(() => {
+    let result = ownedPlayers;
+    if (posFilter !== "ALL") result = result.filter((o) => o.player.position === posFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((o) => o.player.name.toLowerCase().includes(q) || o.player.fullName.toLowerCase().includes(q));
+    }
+    return result.sort((a, b) => b.player.overall - a.player.overall);
+  }, [ownedPlayers, posFilter, search]);
 
   function handleBuy(player: Player) {
     if (!canAfford(player)) return;
-    // Try starter slot first
     const emptyStarter = slots.findIndex((s) => s === null);
     if (emptyStarter !== -1) {
       addPlayer(emptyStarter, player);
@@ -131,8 +188,19 @@ export default function TransfersPage() {
         </button>
       </div>
 
+      {/* Search bar */}
+      <div className="px-4 py-2 border-b border-border">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search player name..."
+          className="w-full h-8 px-3 bg-bg border border-border rounded-[3px] font-mono text-xs text-text placeholder:text-text-dim focus:border-accent focus:outline-none transition-colors duration-100"
+        />
+      </div>
+
       {/* Position filter */}
-      <div className="flex gap-1 px-4 py-2 overflow-x-auto">
+      <div className="flex gap-1 px-4 py-1.5 overflow-x-auto">
         {POSITION_FILTERS.map((pf) => (
           <button
             key={pf.value}
@@ -149,6 +217,40 @@ export default function TransfersPage() {
         ))}
       </div>
 
+      {/* Rating filter + Sort (market tab only) */}
+      {tab === "market" && (
+        <div className="flex gap-1 px-4 py-1.5 overflow-x-auto border-b border-border">
+          {/* Rating tier filter */}
+          <select
+            value={ratingFilter}
+            onChange={(e) => setRatingFilter(e.target.value as RatingFilter)}
+            className="h-7 px-2 bg-bg border border-border rounded-[3px] font-mono text-[10px] text-text-mid focus:border-accent focus:outline-none"
+          >
+            {RATING_FILTERS.map((rf) => (
+              <option key={rf.value} value={rf.value}>{rf.label}</option>
+            ))}
+          </select>
+
+          <div className="w-px bg-border mx-1" />
+
+          {/* Sort options */}
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setSortBy(opt.value)}
+              className={cn(
+                "shrink-0 h-7 px-2 rounded-[3px] font-mono text-[10px] border transition-colors duration-100",
+                sortBy === opt.value
+                  ? "border-accent text-accent bg-accent/10"
+                  : "border-border text-text-dim hover:border-border-light"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Player list */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-20">
         {tab === "market" ? (
@@ -159,20 +261,21 @@ export default function TransfersPage() {
               <div className="h-3 bg-border rounded-sm w-40 animate-pulse" />
             </div>
           ) : filteredMarket.length === 0 ? (
-            <p className="font-mono text-xs text-text-dim py-4">No players available.</p>
+            <p className="font-mono text-xs text-text-dim py-4">No players match your filters.</p>
           ) : (
             <div className="flex flex-col gap-0.5">
               {filteredMarket
-                .sort((a, b) => b.overall - a.overall)
                 .slice(0, 50)
                 .map((player) => {
                   const affordable = canAfford(player);
                   const squadFull = filledCount() >= 11 && benchFilledCount() >= 10;
+                  const tier = getCardTier(player.overall);
 
                   return (
                     <div
                       key={player.id}
-                      className="flex items-center gap-2 h-10 px-2 rounded-[3px] hover:bg-surface-alt transition-colors duration-100"
+                      className="flex items-center gap-2 h-10 px-2 rounded-[3px] hover:bg-surface-alt transition-colors duration-100 border-l-[3px]"
+                      style={{ borderLeftColor: tier.border }}
                     >
                       <span className={cn("font-mono text-[10px] uppercase w-6", positionColor(player.position))}>
                         {player.position}
@@ -183,7 +286,7 @@ export default function TransfersPage() {
                       >
                         {player.name}
                       </button>
-                      <span className="font-mono text-xs text-accent tabular-nums w-6 text-right">
+                      <span className="font-mono text-xs tabular-nums w-6 text-right" style={{ color: tier.text }}>
                         {player.overall}
                       </span>
                       <span className="font-mono text-[10px] text-gold tabular-nums w-12 text-right">
@@ -206,7 +309,7 @@ export default function TransfersPage() {
                 })}
               {filteredMarket.length > 50 && (
                 <p className="font-mono text-[10px] text-text-dim text-center py-2">
-                  Showing top 50 of {filteredMarket.length}. Use position filters to narrow.
+                  Showing top 50 of {filteredMarket.length}. Use filters to narrow.
                 </p>
               )}
             </div>
@@ -215,12 +318,13 @@ export default function TransfersPage() {
           <p className="font-mono text-xs text-text-dim py-4">No players owned{posFilter !== "ALL" ? ` at ${posFilter}` : ""}.</p>
         ) : (
           <div className="flex flex-col gap-0.5">
-            {filteredOwned
-              .sort((a, b) => b.player.overall - a.player.overall)
-              .map(({ player, source, index }) => (
+            {filteredOwned.map(({ player, source, index }) => {
+              const tier = getCardTier(player.overall);
+              return (
                 <div
                   key={player.id}
-                  className="flex items-center gap-2 h-10 px-2 rounded-[3px] hover:bg-surface-alt transition-colors duration-100"
+                  className="flex items-center gap-2 h-10 px-2 rounded-[3px] hover:bg-surface-alt transition-colors duration-100 border-l-[3px]"
+                  style={{ borderLeftColor: tier.border }}
                 >
                   <span className={cn("font-mono text-[10px] uppercase w-6", positionColor(player.position))}>
                     {player.position}
@@ -234,7 +338,7 @@ export default function TransfersPage() {
                   <span className="font-mono text-[10px] text-text-dim uppercase">
                     {source === "starter" ? "XI" : "SUB"}
                   </span>
-                  <span className="font-mono text-xs text-accent tabular-nums w-6 text-right">
+                  <span className="font-mono text-xs tabular-nums w-6 text-right" style={{ color: tier.text }}>
                     {player.overall}
                   </span>
                   <span className="font-mono text-[10px] text-gold tabular-nums w-12 text-right">
@@ -247,7 +351,8 @@ export default function TransfersPage() {
                     Sell
                   </button>
                 </div>
-              ))}
+              );
+            })}
           </div>
         )}
       </div>

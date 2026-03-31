@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { DIVISIONS, cn } from "@/lib/utils";
+import { DIVISIONS, cn, getEloRank } from "@/lib/utils";
 
 export default async function ClubPage() {
   const supabase = await createClient();
@@ -27,6 +27,7 @@ export default async function ClubPage() {
     : 0;
   const winRate =
     totalMatches > 0 ? Math.round((profile!.wins / totalMatches) * 100) : 0;
+  const eloRank = profile ? getEloRank(profile.elo_rating) : null;
 
   // Get top 10 for a mini leaderboard
   const { data: leaderboard } = await supabase
@@ -49,9 +50,14 @@ export default async function ClubPage() {
           <div className="flex gap-4 mt-3">
             <div className="flex flex-col">
               <span className="font-mono text-[10px] text-text-dim uppercase">ELO</span>
-              <span className="font-mono text-md text-accent tabular-nums font-semibold">
+              <span className="font-mono text-md tabular-nums font-semibold" style={{ color: eloRank?.color }}>
                 {profile.elo_rating}
               </span>
+              {eloRank && (
+                <span className="font-mono text-[8px] uppercase" style={{ color: eloRank.color }}>
+                  {eloRank.label}
+                </span>
+              )}
             </div>
             <div className="flex flex-col">
               <span className="font-mono text-[10px] text-text-dim uppercase">Record</span>
@@ -73,12 +79,12 @@ export default async function ClubPage() {
         </div>
       )}
 
-      {/* Division progress */}
+      {/* Full division track */}
       {profile && division && (
         <div className="bg-surface border border-border rounded-md p-3">
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
-              {division.name}
+              Division Progress
             </span>
             <span className="font-mono text-xs text-text-mid tabular-nums">
               {profile.division_points}
@@ -86,7 +92,7 @@ export default async function ClubPage() {
             </span>
           </div>
           {division.pointsToPromote && (
-            <div className="h-1.5 bg-border rounded-sm overflow-hidden">
+            <div className="h-1.5 bg-border rounded-sm overflow-hidden mb-3">
               <div
                 className="h-full bg-accent"
                 style={{
@@ -95,25 +101,49 @@ export default async function ClubPage() {
               />
             </div>
           )}
-          <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1">
-            {DIVISIONS.slice(0, 6).map((d) => (
-              <div
-                key={d.id}
-                className={cn(
-                  "shrink-0 px-2 py-1 border rounded-[3px] min-w-[60px]",
-                  profile.division === d.id
-                    ? "border-accent bg-accent/10"
-                    : "border-border"
-                )}
-              >
-                <p className="font-mono text-[8px] text-text-dim uppercase">{d.name}</p>
-              </div>
-            ))}
+          {/* All divisions track */}
+          <div className="flex flex-col gap-1">
+            {[...DIVISIONS].reverse().map((d) => {
+              const isCurrent = profile.division === d.id;
+              const isAbove = d.id < profile.division;
+              return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    "flex items-center gap-2 h-7 px-2 rounded-[3px]",
+                    isCurrent && "bg-accent/10 border border-accent",
+                    isAbove && "opacity-40",
+                    !isCurrent && !isAbove && "border border-border"
+                  )}
+                >
+                  <span className={cn(
+                    "font-mono text-[10px] uppercase w-5 tabular-nums",
+                    isCurrent ? "text-accent" : "text-text-dim"
+                  )}>
+                    {d.id}
+                  </span>
+                  <span className={cn(
+                    "font-mono text-[11px] flex-1",
+                    isCurrent ? "text-accent font-medium" : "text-text-mid"
+                  )}>
+                    {d.name}
+                  </span>
+                  {d.pointsToPromote && (
+                    <span className="font-mono text-[9px] text-text-dim tabular-nums">
+                      {d.pointsToPromote}pts
+                    </span>
+                  )}
+                  <span className="font-mono text-[9px] text-gold tabular-nums">
+                    {d.rewardCoins}c
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Achievements placeholder */}
+      {/* Achievements */}
       <div className="bg-surface border border-border rounded-md p-3">
         <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
           Achievements

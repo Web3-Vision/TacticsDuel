@@ -94,6 +94,18 @@ export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
 }
 
+export interface EloRank {
+  label: string;
+  color: string;
+}
+
+export function getEloRank(elo: number): EloRank {
+  if (elo >= 2000) return { label: "Elite", color: "#00FF41" };
+  if (elo >= 1500) return { label: "Gold", color: "#FFD700" };
+  if (elo >= 1000) return { label: "Silver", color: "#C0C0C0" };
+  return { label: "Bronze", color: "#CD7F32" };
+}
+
 export const SALARY_CAP = 2000;
 
 export const DIVISIONS: {

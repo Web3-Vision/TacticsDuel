@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { DIVISIONS } from "@/lib/utils";
+import { DIVISIONS, getEloRank } from "@/lib/utils";
 import DivisionProgress from "@/components/home/DivisionProgress";
 import RecentResults from "@/components/home/RecentResults";
 import SquadPreview from "@/components/home/SquadPreview";
@@ -57,6 +57,7 @@ export default async function HomePage() {
     : 0;
   const winRate =
     totalMatches > 0 ? Math.round((profile!.wins / totalMatches) * 100) : 0;
+  const eloRank = profile ? getEloRank(profile.elo_rating) : null;
 
   return (
     <div className="p-4 flex flex-col gap-3">
@@ -74,9 +75,14 @@ export default async function HomePage() {
         <div className="bg-surface border border-border rounded-md p-3 flex items-center justify-between">
           <div className="flex flex-col items-center">
             <span className="font-mono text-[10px] text-text-dim uppercase">ELO</span>
-            <span className="font-mono text-xs text-accent tabular-nums font-semibold">
+            <span className="font-mono text-xs tabular-nums font-semibold" style={{ color: eloRank?.color }}>
               {profile.elo_rating}
             </span>
+            {eloRank && (
+              <span className="font-mono text-[8px] uppercase" style={{ color: eloRank.color }}>
+                {eloRank.label}
+              </span>
+            )}
           </div>
           <div className="flex flex-col items-center">
             <span className="font-mono text-[10px] text-text-dim uppercase">Record</span>
@@ -109,6 +115,33 @@ export default async function HomePage() {
 
       {/* Squad Preview */}
       <SquadPreview />
+
+      {/* Season stats */}
+      {profile && (
+        <div className="bg-surface border border-border rounded-md p-3">
+          <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
+            Season Stats
+          </span>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-text-mid">Matches</span>
+              <span className="font-mono text-xs text-text tabular-nums">{totalMatches}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-text-mid">Win Rate</span>
+              <span className="font-mono text-xs text-text tabular-nums">{winRate}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-text-mid">Current Streak</span>
+              <span className="font-mono text-xs text-accent tabular-nums">{profile.current_streak}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-text-mid">Best Streak</span>
+              <span className="font-mono text-xs text-gold tabular-nums">{profile.best_streak}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent matches */}
       {user && <RecentResults matches={recentMatches} userId={user.id} />}

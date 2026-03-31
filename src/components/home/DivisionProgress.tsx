@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
-import type { Profile, Division } from "@/lib/types";
+import { cn, DIVISIONS } from "@/lib/utils";
+import type { Division } from "@/lib/types";
 
 interface Last5Entry {
   result: string;
@@ -8,6 +8,7 @@ interface Last5Entry {
 
 interface DivisionProgressProps {
   profile: {
+    division: number;
     division_points: number;
     wins: number;
     draws: number;
@@ -25,12 +26,23 @@ export default function DivisionProgress({
 }: DivisionProgressProps) {
   if (!division) return null;
 
+  // Find next division for promotion label
+  const nextDivision = DIVISIONS.find((d) => d.id === division.id - 1);
+  const isRelegationZone = profile.division_points <= 0 && division.id < 10;
+
   return (
     <div className="bg-surface border border-border rounded-md p-3">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
-          {division.name}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-text-dim uppercase tracking-wide">
+            {division.name}
+          </span>
+          {nextDivision && (
+            <span className="font-mono text-[10px] text-accent">
+              → {nextDivision.name}
+            </span>
+          )}
+        </div>
         <span className="font-mono text-xs text-text-mid tabular-nums">
           {profile.division_points}
           {division.pointsToPromote
@@ -48,6 +60,11 @@ export default function DivisionProgress({
             }}
           />
         </div>
+      )}
+      {isRelegationZone && (
+        <p className="font-mono text-[10px] text-danger mt-1">
+          Relegation zone — win matches to stay up
+        </p>
       )}
       <div className="flex items-center gap-2 mt-2">
         {last5.length > 0 && (
