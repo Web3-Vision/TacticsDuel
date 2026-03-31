@@ -1,0 +1,110 @@
+name: Discord Notifications
+
+on:
+  push:
+    branches:
+      - main
+  deployment_status:
+
+jobs:
+  notify-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send push notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
+          COMPARE_URL: ${{ github.event.compare }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL is not configured; skipping push notification"
+            exit 0
+          fi
+
+          short_sha="${COMMIT_SHA:0:7}"
+          payload=$(jq -n \
+            --arg repo "$REPOSITORY" \
+            --arg branch "$REF_NAME" \
+            --arg actor "$ACTOR" \
+            --arg sha "$short_sha" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg compare_url "$COMPARE_URL" \
+            --arg message "$COMMIT_MESSAGE" \
+            '{
+              content: "🚀 New code push",
+              embeds: [
+                {
+                  title: ($repo + " • " + $branch),
+                  description: $message,
+                  color: 5763719,
+                  fields: [
+                    {name: "Actor", value: $actor, inline: true},
+                    {name: "Commit", value: ("[`" + $sha + "`]" + "(" + $commit_url + ")"), inline: true},
+                    {name: "Changes", value: ("[View compare](" + $compare_url + ")"), inline: false}
+                  ]
+                }
+              ]
+            }')
+
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
+
+  notify-deployment:
+    if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send deployment notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          DEPLOY_STATE: ${{ github.event.deployment_status.state }}
+          ENVIRONMENT: ${{ github.event.deployment.environment }}
+          REF_NAME: ${{ github.event.deployment.ref }}
+          DEPLOY_URL: ${{ github.event.deployment_status.environment_url }}
+          STATUS_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL is not configured; skipping deployment notification"
+            exit 0
+          fi
+
+          deploy_url=${DEPLOY_URL:-$STATUS_URL}
+          if [ -z "$deploy_url" ]; then
+            deploy_url="https://github.com/$REPOSITORY/deployments"
+          fi
+
+          payload=$(jq -n \
+            --arg repo "$REPOSITORY" \
+            --arg env_name "$ENVIRONMENT" \
+            --arg state "$DEPLOY_STATE" \
+            --arg ref "$REF_NAME" \
+            --arg actor "$ACTOR" \
+            --arg deploy_url "$deploy_url" \
+            '{
+              content: "✅ New deployment",
+              embeds: [
+                {
+                  title: ($repo + " • " + $env_name),
+                  description: "A deployment finished successfully.",
+                  color: 3066993,
+                  fields: [
+                    {name: "Status", value: $state, inline: true},
+                    {name: "Ref", value: $ref, inline: true},
+                    {name: "Triggered by", value: $actor, inline: true},
+                    {name: "Deployment", value: ("[Open deployment](" + $deploy_url + ")"), inline: false}
+                  ]
+                }
+              ]
+            }')
+
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
