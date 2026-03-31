@@ -106,3 +106,12 @@ body {
   background: var(--color-accent-dim);
   color: var(--color-text);
 }
+
+/* Elite card glow pulse */
+@keyframes elite-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(0, 255, 65, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(0, 255, 65, 0.5); }
+}
+.card-elite {
+  animation: elite-pulse 2s ease-in-out infinite;
+}

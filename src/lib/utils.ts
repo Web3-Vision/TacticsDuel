@@ -14,6 +14,57 @@ export function getRarity(overall: number): PlayerRarity {
   return "bronze";
 }
 
+export type CardTier = "bronze" | "silver" | "gold" | "elite";
+
+export interface CardTierStyle {
+  tier: CardTier;
+  border: string;
+  bg: string;
+  text: string;
+  borderClass: string;
+  bgClass: string;
+  textClass: string;
+}
+
+export function getCardTier(overall: number): CardTierStyle {
+  if (overall >= 86) return {
+    tier: "elite",
+    border: "#00FF41",
+    bg: "#0a1a0f",
+    text: "#00FF41",
+    borderClass: "border-[#00FF41]",
+    bgClass: "bg-[#0a1a0f]",
+    textClass: "text-[#00FF41]",
+  };
+  if (overall >= 80) return {
+    tier: "gold",
+    border: "#FFD700",
+    bg: "#2a2410",
+    text: "#FFD700",
+    borderClass: "border-[#FFD700]",
+    bgClass: "bg-[#2a2410]",
+    textClass: "text-[#FFD700]",
+  };
+  if (overall >= 70) return {
+    tier: "silver",
+    border: "#C0C0C0",
+    bg: "#1e2024",
+    text: "#C0C0C0",
+    borderClass: "border-[#C0C0C0]",
+    bgClass: "bg-[#1e2024]",
+    textClass: "text-[#C0C0C0]",
+  };
+  return {
+    tier: "bronze",
+    border: "#CD7F32",
+    bg: "#2a1f14",
+    text: "#CD7F32",
+    borderClass: "border-[#CD7F32]",
+    bgClass: "bg-[#2a1f14]",
+    textClass: "text-[#CD7F32]",
+  };
+}
+
 export function formatPrice(millions: number): string {
   return `€${millions}M`;
 }

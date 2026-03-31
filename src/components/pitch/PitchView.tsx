@@ -2,7 +2,7 @@
 
 import { getFormation } from "@/lib/data/formations";
 import { useSquadStore } from "@/lib/stores/squad-store";
-import { cn } from "@/lib/utils";
+import { cn, getCardTier } from "@/lib/utils";
 
 export default function PitchView() {
   const { formationId, slots, activeSlotIndex, setActiveSlot } =
@@ -42,6 +42,7 @@ export default function PitchView() {
       {formation.slots.map((slot, i) => {
         const player = slots[i];
         const isActive = activeSlotIndex === i;
+        const tier = player ? getCardTier(player.overall) : null;
 
         return (
           <button
@@ -59,12 +60,17 @@ export default function PitchView() {
             <div
               className={cn(
                 "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-mono font-medium border",
-                player
-                  ? "bg-accent/20 border-accent text-accent"
+                player && tier
+                  ? cn(tier.tier === "elite" && "card-elite")
                   : isActive
                     ? "bg-surface-alt border-accent text-accent"
                     : "bg-surface border-border text-text-dim"
               )}
+              style={player && tier ? {
+                borderColor: tier.border,
+                backgroundColor: `${tier.border}20`,
+                color: tier.text,
+              } : undefined}
             >
               {player
                 ? player.overall

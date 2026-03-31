@@ -1,7 +1,7 @@
 "use client";
 
 import type { Player } from "@/lib/types";
-import { cn, formatPrice, positionColor } from "@/lib/utils";
+import { cn, formatPrice, positionColor, getCardTier } from "@/lib/utils";
 
 interface PlayerCardProps {
   player: Player;
@@ -16,18 +16,24 @@ export default function PlayerCard({
   disabled,
   inSquad,
 }: PlayerCardProps) {
+  const tier = getCardTier(player.overall);
+
   return (
     <button
       onClick={() => onSelect(player)}
       disabled={disabled}
       className={cn(
-        "w-full h-[44px] flex items-center gap-2 px-3 border-b border-border",
+        "w-full h-[44px] flex items-center gap-2 px-3 border-b border-border border-l-[3px]",
         "hover:bg-surface-alt active:bg-surface-alt transition-colors duration-100",
         disabled && "opacity-40",
         inSquad && "bg-accent/5"
       )}
+      style={{ borderLeftColor: tier.border }}
     >
-      <span className="font-mono text-md font-medium text-accent tabular-nums w-7 shrink-0">
+      <span
+        className="font-mono text-md font-medium tabular-nums w-7 shrink-0"
+        style={{ color: tier.text }}
+      >
         {player.overall}
       </span>
       <span

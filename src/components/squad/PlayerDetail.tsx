@@ -1,7 +1,7 @@
 "use client";
 
 import type { Player } from "@/lib/types";
-import { formatPrice, positionColor, cn } from "@/lib/utils";
+import { formatPrice, positionColor, cn, getCardTier } from "@/lib/utils";
 import BottomSheet from "@/components/ui/BottomSheet";
 
 interface PlayerDetailProps {
@@ -14,27 +14,17 @@ interface PlayerDetailProps {
   canAfford?: boolean;
 }
 
-function StatBar({ label, value }: { label: string; value: number }) {
+function StatCell({ label, value, tierColor }: { label: string; value: number; tierColor: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="font-mono text-[10px] text-text-dim uppercase w-8">
-        {label}
-      </span>
-      <div className="flex-1 h-[3px] bg-border rounded-sm overflow-hidden">
-        <div
-          className={cn(
-            "h-full",
-            value >= 85
-              ? "bg-accent"
-              : value >= 70
-                ? "bg-gold"
-                : "bg-text-dim"
-          )}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-      <span className="font-mono text-xs tabular-nums w-6 text-right text-text-mid">
+    <div className="flex flex-col items-center gap-0.5">
+      <span
+        className="font-mono text-md font-semibold tabular-nums"
+        style={{ color: value >= 85 ? "#22c55e" : value >= 70 ? tierColor : "#6b7280" }}
+      >
         {value}
+      </span>
+      <span className="font-mono text-[9px] text-text-dim uppercase tracking-wide">
+        {label}
       </span>
     </div>
   );
@@ -51,55 +41,103 @@ export default function PlayerDetail({
 }: PlayerDetailProps) {
   if (!player) return null;
 
+  const tier = getCardTier(player.overall);
+
   return (
     <BottomSheet open={open} onClose={onClose} title={player.name}>
       <div className="p-4 flex flex-col gap-4">
-        {/* Header info */}
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-[4px] bg-surface-alt border border-border flex items-center justify-center">
-            <span className="font-mono text-2xl font-semibold text-accent">
-              {player.overall}
-            </span>
-          </div>
-          <div className="flex-1">
-            <p className="font-mono text-md">{player.fullName}</p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-sm">{player.nationality}</span>
-              <span className="font-mono text-xs text-text-dim">
-                {player.club}
+        {/* FUT-style card */}
+        <div
+          className={cn(
+            "rounded-md border-2 p-4 flex flex-col gap-3",
+            tier.tier === "elite" && "card-elite"
+          )}
+          style={{
+            borderColor: tier.border,
+            backgroundColor: tier.bg,
+          }}
+        >
+          {/* Top row: OVR + Position */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col items-center">
+              <span
+                className="font-mono text-3xl font-bold tabular-nums leading-none"
+                style={{ color: tier.text }}
+              >
+                {player.overall}
               </span>
               <span
-                className={cn(
-                  "font-mono text-[10px] uppercase",
-                  positionColor(player.position)
-                )}
+                className="font-mono text-[10px] uppercase tracking-wide mt-0.5"
+                style={{ color: tier.text }}
               >
-                {player.position}
-              </span>
-              <span className="font-mono text-xs text-text-dim">
-                Age {player.age}
+                {tier.tier}
               </span>
             </div>
+            <span
+              className={cn(
+                "font-mono text-sm font-semibold uppercase px-2 py-0.5 rounded-[3px] border",
+                positionColor(player.position)
+              )}
+              style={{ borderColor: `${tier.border}40` }}
+            >
+              {player.position}
+            </span>
           </div>
-          <div className="text-right">
-            <span className="font-mono text-md text-gold">
+
+          {/* Player name */}
+          <p
+            className="font-mono text-lg font-bold uppercase tracking-wide text-center"
+            style={{ color: tier.text }}
+          >
+            {player.name}
+          </p>
+
+          {/* Stats 2x3 grid */}
+          <div className="grid grid-cols-3 gap-y-2 gap-x-4">
+            <StatCell label="PAC" value={player.pace} tierColor={tier.text} />
+            <StatCell label="SHO" value={player.shooting} tierColor={tier.text} />
+            <StatCell label="PAS" value={player.passing} tierColor={tier.text} />
+            <StatCell label="DRI" value={player.dribbling} tierColor={tier.text} />
+            <StatCell label="DEF" value={player.defending} tierColor={tier.text} />
+            <StatCell label="PHY" value={player.physical} tierColor={tier.text} />
+          </div>
+
+          {/* Bottom row: nationality + club + price */}
+          <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: `${tier.border}30` }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">{player.nationality}</span>
+              <span className="font-mono text-[10px] text-text-dim">{player.club}</span>
+            </div>
+            <span className="font-mono text-xs tabular-nums" style={{ color: tier.text }}>
               {formatPrice(player.marketValue)}
             </span>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="flex flex-col gap-2">
-          <StatBar label="PAC" value={player.pace} />
-          <StatBar label="SHO" value={player.shooting} />
-          <StatBar label="PAS" value={player.passing} />
-          <StatBar label="DRI" value={player.dribbling} />
-          <StatBar label="DEF" value={player.defending} />
-          <StatBar label="PHY" value={player.physical} />
-          {player.position === "GK" && (
-            <StatBar label="GK" value={player.goalkeeping} />
-          )}
+        {/* Full name + details */}
+        <div className="flex items-center justify-between px-1">
+          <span className="font-mono text-xs text-text-mid">{player.fullName}</span>
+          <span className="font-mono text-[10px] text-text-dim">Age {player.age}</span>
         </div>
+
+        {/* GK stat if goalkeeper */}
+        {player.position === "GK" && (
+          <div className="flex items-center gap-2 px-1">
+            <span className="font-mono text-[10px] text-text-dim uppercase w-8">GK</span>
+            <div className="flex-1 h-[3px] bg-border rounded-sm overflow-hidden">
+              <div
+                className={cn(
+                  "h-full",
+                  player.goalkeeping >= 85 ? "bg-accent" : player.goalkeeping >= 70 ? "bg-gold" : "bg-text-dim"
+                )}
+                style={{ width: `${player.goalkeeping}%` }}
+              />
+            </div>
+            <span className="font-mono text-xs tabular-nums w-6 text-right text-text-mid">
+              {player.goalkeeping}
+            </span>
+          </div>
+        )}
 
         {/* Action button */}
         {inSquad ? (

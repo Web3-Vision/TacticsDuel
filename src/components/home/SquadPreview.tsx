@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { getFormation } from "@/lib/data/formations";
 import { calculateTeamRatings } from "@/lib/engine/team-strength";
+import { getCardTier } from "@/lib/utils";
 
 export default function SquadPreview() {
   const { formationId, slots, filledCount } = useSquadStore();
@@ -45,6 +46,7 @@ export default function SquadPreview() {
         {/* Player dots */}
         {formation.slots.map((slot, i) => {
           const player = slots[i];
+          const tier = player ? getCardTier(player.overall) : null;
           const shortName = player
             ? player.name.length > 6
               ? player.name.slice(0, 6)
@@ -58,11 +60,14 @@ export default function SquadPreview() {
               style={{ left: `${slot.x}%`, top: `${100 - slot.y}%` }}
             >
               <div
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[7px] font-mono font-semibold ${
-                  player
-                    ? "bg-accent/80 text-black"
-                    : "bg-border text-text-dim"
-                }`}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[7px] font-mono font-semibold"
+                style={player && tier ? {
+                  backgroundColor: `${tier.border}cc`,
+                  color: "#000",
+                } : {
+                  backgroundColor: "var(--color-border)",
+                  color: "var(--color-text-dim)",
+                }}
               >
                 {player ? player.overall : slot.label.slice(0, 2)}
               </div>
