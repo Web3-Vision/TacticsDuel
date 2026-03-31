@@ -74,6 +74,9 @@ const TEMPLATES: Record<string, string[]> = {
     "{player} picks out {player2} with a perfect through ball.",
     "Clever play by {player}, creating space for {player2}.",
     "{player} with a dangerous cross towards {player2}.",
+    "Long ball over the top! {player} finds {player2} in space!",
+    "Quick tempo play! {player} releases {player2} with a first-time pass.",
+    "Wide play opens up the defence! {player} delivers for {player2}.",
   ],
   tackle: [
     "Strong tackle by {player}! Wins the ball cleanly.",
@@ -81,12 +84,17 @@ const TEMPLATES: Record<string, string[]> = {
     "Excellent challenge from {player}, breaking up the attack.",
     "{player} times the tackle perfectly.",
     "Good recovery tackle from {player}.",
+    "High press forces a turnover! {player} wins it back for {team}.",
+    "{player} presses hard and forces the error!",
+    "Aggressive pressing by {team}! {player} recovers possession.",
   ],
   interception: [
     "{player} reads the pass and intercepts.",
     "Well read by {player}, stepping in to cut out the danger.",
     "{player} anticipates the through ball.",
     "Interception by {player}. Good defensive awareness.",
+    "Solid defensive shape holds firm! {player} cuts out the pass.",
+    "{player} reads the play perfectly. Compact defending from {team}.",
   ],
   foul: [
     "Foul by {player} on {player2}. Free kick.",

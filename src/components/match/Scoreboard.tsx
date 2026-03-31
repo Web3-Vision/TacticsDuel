@@ -4,7 +4,7 @@ import { useMatchStore } from "@/lib/stores/match-store";
 import { cn } from "@/lib/utils";
 
 export default function Scoreboard() {
-  const { homeTeam, awayTeam, homeScore, awayScore, currentMinute, stats, isFinished, visibleEvents } =
+  const { homeTeam, awayTeam, homeScore, awayScore, currentMinute, stats, isFinished, visibleEvents, homeFormation, awayFormation } =
     useMatchStore();
 
   const homePoss = stats?.homePossession ?? 50;
@@ -48,6 +48,13 @@ export default function Scoreboard() {
           <span className="font-mono text-md text-text flex-1 truncate">
             {awayTeam}
           </span>
+        </div>
+
+        {/* Formations */}
+        <div className="flex items-center justify-center gap-2 mt-0.5">
+          <span className="font-mono text-[10px] text-text-dim tabular-nums">{homeFormation}</span>
+          <span className="font-mono text-[10px] text-text-dim">vs</span>
+          <span className="font-mono text-[10px] text-text-dim tabular-nums">{awayFormation}</span>
         </div>
 
         {/* Goal scorers */}

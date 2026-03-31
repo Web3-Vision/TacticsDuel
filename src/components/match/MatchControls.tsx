@@ -2,10 +2,10 @@
 
 import { useMatchStore } from "@/lib/stores/match-store";
 import { cn } from "@/lib/utils";
-import { SkipForward, Filter } from "lucide-react";
+import { SkipForward, Filter, Pause, Play } from "lucide-react";
 
 export default function MatchControls() {
-  const { speed, setSpeed, keyEventsOnly, toggleKeyOnly, skipToEnd, isFinished } =
+  const { speed, setSpeed, keyEventsOnly, toggleKeyOnly, skipToEnd, isFinished, isPlaying, togglePlay } =
     useMatchStore();
 
   if (isFinished) return null;
@@ -28,6 +28,23 @@ export default function MatchControls() {
         </button>
       ))}
 
+      {/* Pause/Play */}
+      <button
+        onClick={togglePlay}
+        className={cn(
+          "h-8 px-3 rounded-[3px] font-mono text-[11px] border flex items-center gap-1.5 transition-colors duration-100",
+          !isPlaying
+            ? "border-accent text-accent bg-accent/10"
+            : "border-border text-text-dim"
+        )}
+      >
+        {isPlaying ? (
+          <Pause size={12} strokeWidth={1.5} />
+        ) : (
+          <Play size={12} strokeWidth={1.5} />
+        )}
+      </button>
+
       {/* Key events toggle */}
       <button
         onClick={toggleKeyOnly}
@@ -44,13 +61,13 @@ export default function MatchControls() {
 
       <div className="flex-1" />
 
-      {/* Skip */}
+      {/* Skip to Result */}
       <button
         onClick={skipToEnd}
         className="h-8 px-3 rounded-[3px] font-mono text-[11px] border border-border text-text-dim flex items-center gap-1.5 hover:border-border-light transition-colors duration-100"
       >
         <SkipForward size={12} strokeWidth={1.5} />
-        Skip
+        Result
       </button>
     </div>
   );

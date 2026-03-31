@@ -5,6 +5,7 @@ import { useMatchStore } from "@/lib/stores/match-store";
 import Scoreboard from "./Scoreboard";
 import EventFeed from "./EventFeed";
 import MatchControls from "./MatchControls";
+import MatchPitch from "./MatchPitch";
 import PostMatchStats from "./PostMatchStats";
 import TacticalIntervention from "./TacticalIntervention";
 import type { TacticalOverride } from "@/lib/engine/match-engine";
@@ -62,6 +63,7 @@ export default function MatchViewer({ onHalftimeIntervention, interactive = fals
         <PostMatchStats />
       ) : (
         <>
+          <MatchPitch />
           <EventFeed />
           <MatchControls />
         </>

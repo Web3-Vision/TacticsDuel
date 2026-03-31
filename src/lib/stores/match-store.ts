@@ -17,11 +17,15 @@ interface MatchState {
   isFinished: boolean;
   homeTeam: string;
   awayTeam: string;
+  homeFormation: string;
+  awayFormation: string;
+  currentPossession: "home" | "away";
 
-  loadMatch: (result: MatchResult, homeTeam: string, awayTeam: string) => void;
+  loadMatch: (result: MatchResult, homeTeam: string, awayTeam: string, homeFormation?: string, awayFormation?: string) => void;
   loadReplay: (events: MatchEvent[], stats: MatchStats | null, homeTeam: string, awayTeam: string) => void;
   tick: () => void;
   setSpeed: (speed: 1 | 2 | 3) => void;
+  togglePlay: () => void;
   toggleKeyOnly: () => void;
   skipToEnd: () => void;
   reset: () => void;
@@ -43,8 +47,11 @@ export const useMatchStore = create<MatchState>((set, get) => ({
   isFinished: false,
   homeTeam: "Home",
   awayTeam: "Away",
+  homeFormation: "4-3-3",
+  awayFormation: "4-3-3",
+  currentPossession: "home",
 
-  loadMatch: (result, homeTeam, awayTeam) => {
+  loadMatch: (result, homeTeam, awayTeam, homeFormation, awayFormation) => {
     set({
       events: result.events,
       visibleEvents: [],
@@ -59,6 +66,9 @@ export const useMatchStore = create<MatchState>((set, get) => ({
       isFinished: false,
       homeTeam,
       awayTeam,
+      homeFormation: homeFormation ?? "4-3-3",
+      awayFormation: awayFormation ?? "4-3-3",
+      currentPossession: "home",
     });
   },
 
@@ -97,16 +107,25 @@ export const useMatchStore = create<MatchState>((set, get) => ({
       else newAwayScore++;
     }
 
+    // Track possession changes
+    let newPossession = state.currentPossession;
+    if (event.type === "possession_change" && (event.team === "home" || event.team === "away")) {
+      newPossession = event.team;
+    }
+
     set({
       currentIndex: state.currentIndex + 1,
       visibleEvents: [...state.visibleEvents, event],
       currentMinute: event.minute,
       homeScore: newHomeScore,
       awayScore: newAwayScore,
+      currentPossession: newPossession,
     });
   },
 
   setSpeed: (speed) => set({ speed }),
+
+  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
 
   toggleKeyOnly: () => set((s) => ({ keyEventsOnly: !s.keyEventsOnly })),
 
@@ -146,5 +165,8 @@ export const useMatchStore = create<MatchState>((set, get) => ({
       playerRatings: {},
       manOfTheMatch: "",
       isFinished: false,
+      homeFormation: "4-3-3",
+      awayFormation: "4-3-3",
+      currentPossession: "home",
     }),
 }));

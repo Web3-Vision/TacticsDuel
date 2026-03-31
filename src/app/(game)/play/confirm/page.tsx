@@ -128,7 +128,7 @@ export default function PreMatchConfirmPage() {
         matchType: "ai",
       });
 
-      loadMatch(result, "Your Team", aiClubName || "AI FC");
+      loadMatch(result, "Your Team", aiClubName || "AI FC", formationId, awayTactics.formation);
       router.push("/match/live");
     } else if (mode === "ranked") {
       router.push("/match/queue");
