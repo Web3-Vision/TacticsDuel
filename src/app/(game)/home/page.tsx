@@ -52,6 +52,12 @@ export default async function HomePage() {
     return { result, score: `${myScore}-${theirScore}` };
   });
 
+  const totalMatches = profile
+    ? profile.wins + profile.draws + profile.losses
+    : 0;
+  const winRate =
+    totalMatches > 0 ? Math.round((profile!.wins / totalMatches) * 100) : 0;
+
   return (
     <div className="p-4 flex flex-col gap-3">
       {/* Division progress */}
@@ -61,6 +67,36 @@ export default async function HomePage() {
           division={division}
           last5={last5}
         />
+      )}
+
+      {/* Quick stats row */}
+      {profile && (
+        <div className="bg-surface border border-border rounded-md p-3 flex items-center justify-between">
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-text-dim uppercase">ELO</span>
+            <span className="font-mono text-xs text-accent tabular-nums font-semibold">
+              {profile.elo_rating}
+            </span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-text-dim uppercase">Record</span>
+            <span className="font-mono text-[11px] tabular-nums">
+              <span className="text-win">{profile.wins}W</span>{" "}
+              <span className="text-draw">{profile.draws}D</span>{" "}
+              <span className="text-loss">{profile.losses}L</span>
+            </span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-text-dim uppercase">Win %</span>
+            <span className="font-mono text-xs text-text tabular-nums">{winRate}%</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-text-dim uppercase">Coins</span>
+            <span className="font-mono text-xs text-gold tabular-nums font-semibold">
+              {profile.coins}
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Quick Play CTA */}
@@ -73,22 +109,6 @@ export default async function HomePage() {
 
       {/* Squad Preview */}
       <SquadPreview />
-
-      {/* Quick links */}
-      <div className="flex gap-2">
-        <Link
-          href="/club/squad"
-          className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
-        >
-          Edit Squad
-        </Link>
-        <Link
-          href="/club/tactics"
-          className="flex-1 block h-10 leading-[40px] text-center border border-border text-text-mid font-mono text-[11px] uppercase tracking-wide rounded-[4px] hover:border-border-light transition-colors duration-100"
-        >
-          Tactics
-        </Link>
-      </div>
 
       {/* Recent matches */}
       {user && <RecentResults matches={recentMatches} userId={user.id} />}
@@ -113,7 +133,6 @@ export default async function HomePage() {
           </div>
         </div>
       </div>
-
     </div>
   );
 }

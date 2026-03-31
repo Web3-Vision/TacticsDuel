@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Profile } from "@/lib/types";
 import { DIVISIONS } from "@/lib/utils";
 
@@ -13,12 +12,6 @@ export default function LeftPanel({ profile }: LeftPanelProps) {
         <p className="font-mono text-xs text-text-dim uppercase tracking-wide">
           TacticsDuel
         </p>
-        <Link
-          href="/login"
-          className="font-mono text-xs text-accent hover:underline"
-        >
-          Log in to play
-        </Link>
       </div>
     );
   }
@@ -79,28 +72,6 @@ export default function LeftPanel({ profile }: LeftPanelProps) {
           <span className="font-mono text-[10px] text-text-dim uppercase">Win Rate</span>
           <span className="font-mono text-xs text-text tabular-nums">{winRate}%</span>
         </div>
-      </div>
-
-      {/* Quick links */}
-      <div className="flex flex-col gap-1">
-        <Link
-          href="/club/squad"
-          className="font-mono text-xs text-text-mid h-8 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Edit Squad
-        </Link>
-        <Link
-          href="/club/tactics"
-          className="font-mono text-xs text-text-mid h-8 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Tactics
-        </Link>
-        <Link
-          href="/play"
-          className="font-mono text-xs text-text-mid h-8 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Play Match
-        </Link>
       </div>
     </div>
   );

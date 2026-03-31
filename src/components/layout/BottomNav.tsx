@@ -2,13 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutGrid, PlayCircle, Shield } from "lucide-react";
+import { LayoutGrid, PlayCircle, Users, ShoppingBag, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { href: "/home", label: "Home", icon: LayoutGrid },
   { href: "/play", label: "Play", icon: PlayCircle },
-  { href: "/club", label: "Club", icon: Shield },
+  { href: "/club/squad", label: "Squad", icon: Users },
+  { href: "/club/players", label: "Market", icon: ShoppingBag },
+  { href: "/club", label: "Club", icon: Trophy },
 ];
 
 export default function BottomNav() {
@@ -18,10 +20,19 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-50 h-14 bg-surface border-t border-border pb-safe">
       <div className="flex items-stretch h-full max-w-[640px] mx-auto">
         {tabs.map((tab) => {
-          const isActive =
-            tab.href === "/club"
-              ? pathname.startsWith("/club")
-              : pathname === tab.href || pathname.startsWith(tab.href + "/");
+          let isActive = false;
+          if (tab.href === "/home") {
+            isActive = pathname === "/home";
+          } else if (tab.href === "/play") {
+            isActive = pathname.startsWith("/play") || pathname.startsWith("/match");
+          } else if (tab.href === "/club/squad") {
+            isActive = pathname === "/club/squad" || pathname === "/club/tactics";
+          } else if (tab.href === "/club/players") {
+            isActive = pathname === "/club/players";
+          } else if (tab.href === "/club") {
+            isActive = pathname === "/club" || pathname === "/club/leaderboard";
+          }
+
           const Icon = tab.icon;
 
           return (
@@ -35,8 +46,8 @@ export default function BottomNav() {
                   : "text-text-dim"
               )}
             >
-              <Icon size={20} strokeWidth={1.5} />
-              <span className="font-mono text-[10px] uppercase tracking-wide">
+              <Icon size={18} strokeWidth={1.5} />
+              <span className="font-mono text-[9px] uppercase tracking-wide">
                 {tab.label}
               </span>
             </Link>

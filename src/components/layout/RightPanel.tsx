@@ -81,31 +81,6 @@ export default async function RightPanel({ userId }: RightPanelProps) {
           </div>
         )}
       </div>
-
-      {/* Quick links */}
-      <div className="bg-surface border border-border rounded-md p-3 flex flex-col gap-1">
-        <span className="font-mono text-[10px] text-text-dim uppercase tracking-wide mb-1">
-          Quick Links
-        </span>
-        <Link
-          href="/history"
-          className="font-mono text-xs text-text-mid h-7 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Match History
-        </Link>
-        <Link
-          href="/club/leaderboard"
-          className="font-mono text-xs text-text-mid h-7 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Divisions
-        </Link>
-        <Link
-          href="/play"
-          className="font-mono text-xs text-text-mid h-7 flex items-center hover:text-accent transition-colors duration-100"
-        >
-          Play Now
-        </Link>
-      </div>
     </div>
   );
 }
