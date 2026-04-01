@@ -66,12 +66,34 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect new users to onboarding (if they haven't completed it)
-  if (user && (request.nextUrl.pathname === "/home" || request.nextUrl.pathname === "/dashboard" || request.nextUrl.pathname === "/")) {
+  if (
+    user &&
+    (request.nextUrl.pathname === "/home" ||
+      request.nextUrl.pathname === "/dashboard" ||
+      request.nextUrl.pathname === "/" ||
+      request.nextUrl.pathname.startsWith("/play") ||
+      request.nextUrl.pathname.startsWith("/match") ||
+      request.nextUrl.pathname.startsWith("/squad") ||
+      request.nextUrl.pathname.startsWith("/club"))
+  ) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("onboarding_completed")
+      .select("onboarding_completed, account_status")
       .eq("id", user.id)
       .single();
+
+    if (profile?.account_status === "deactivated") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+
+    if (profile?.account_status === "paused" && !request.nextUrl.pathname.startsWith("/profile")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/profile";
+      url.searchParams.set("notice", "account-paused");
+      return NextResponse.redirect(url);
+    }
 
     if (profile && !profile.onboarding_completed) {
       const url = request.nextUrl.clone();

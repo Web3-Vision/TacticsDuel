@@ -7,6 +7,7 @@ import { generateAISquad, generateAITactics } from "@/lib/engine/ai-opponent";
 import { getFormation } from "@/lib/data/formations";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
 import { persistNarrativeArtifacts } from "@/lib/engine/narrative-pipeline";
+import { resolveStarterIdsFromMatchSquad } from "@/lib/squad/persisted-squad";
 import type { Player, Tactics } from "@/lib/types";
 
 // Resolve squad rows (from DB) to Player objects
@@ -19,7 +20,15 @@ function resolveSquad(squadData: unknown[]): Player[] {
     return squadData as Player[];
   }
 
-  // Otherwise, resolve player_id references
+  // Otherwise, resolve ids from legacy/new persisted payloads.
+  const starterIds = resolveStarterIdsFromMatchSquad(squadData);
+  if (starterIds.length > 0) {
+    return starterIds
+      .map((playerId) => PLAYERS.find((player) => player.id === playerId))
+      .filter((player): player is Player => Boolean(player));
+  }
+
+  // Legacy fallback: row-per-player payload with player_id.
   const resolved: Player[] = [];
   for (const row of squadData) {
     const r = row as Record<string, unknown>;

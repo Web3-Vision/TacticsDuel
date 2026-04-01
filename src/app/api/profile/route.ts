@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  ACCOUNT_STATUSES,
+  MANAGER_ARCHETYPES,
+  HAIR_STYLES,
+  HAIR_COLORS,
+  SKIN_TONES,
+  BEARD_STYLES,
+  type AccountStatus,
+} from "@/lib/profile-options";
 
 export async function PATCH(request: NextRequest) {
   const supabase = await createClient();
@@ -14,10 +23,114 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const updates: Record<string, unknown> = {};
 
-  if (body.favorite_team !== undefined) updates.favorite_team = body.favorite_team;
-  if (body.age !== undefined) updates.age = body.age;
-  if (body.captain_player_id !== undefined) updates.captain_player_id = body.captain_player_id;
-  if (body.onboarding_completed !== undefined) updates.onboarding_completed = body.onboarding_completed;
+  if (body.favorite_team !== undefined) {
+    updates.favorite_team =
+      typeof body.favorite_team === "string" && body.favorite_team.trim().length > 0
+        ? body.favorite_team.trim().slice(0, 60)
+        : null;
+  }
+
+  if (body.manager_name !== undefined) {
+    const managerName =
+      typeof body.manager_name === "string" ? body.manager_name.trim() : "";
+    if (managerName.length > 0 && managerName.length < 2) {
+      return NextResponse.json({ error: "Manager name must be at least 2 characters" }, { status: 400 });
+    }
+    if (managerName.length > 40) {
+      return NextResponse.json({ error: "Manager name must be 40 characters or less" }, { status: 400 });
+    }
+    updates.manager_name = managerName.length > 0 ? managerName : null;
+  }
+
+  if (body.age !== undefined) {
+    if (body.age === null || body.age === "") {
+      updates.age = null;
+    } else if (typeof body.age === "number" && Number.isInteger(body.age) && body.age >= 13 && body.age <= 80) {
+      updates.age = body.age;
+    } else {
+      return NextResponse.json({ error: "Age must be an integer between 13 and 80" }, { status: 400 });
+    }
+  }
+
+  if (body.manager_avatar_archetype !== undefined) {
+    if (!MANAGER_ARCHETYPES.includes(body.manager_avatar_archetype)) {
+      return NextResponse.json({ error: "Invalid manager archetype" }, { status: 400 });
+    }
+    updates.manager_avatar_archetype = body.manager_avatar_archetype;
+  }
+
+  if (body.manager_hair_style !== undefined) {
+    if (!HAIR_STYLES.includes(body.manager_hair_style)) {
+      return NextResponse.json({ error: "Invalid hair style" }, { status: 400 });
+    }
+    updates.manager_hair_style = body.manager_hair_style;
+  }
+
+  if (body.manager_hair_color !== undefined) {
+    if (!HAIR_COLORS.includes(body.manager_hair_color)) {
+      return NextResponse.json({ error: "Invalid hair color" }, { status: 400 });
+    }
+    updates.manager_hair_color = body.manager_hair_color;
+  }
+
+  if (body.manager_skin_tone !== undefined) {
+    if (!SKIN_TONES.includes(body.manager_skin_tone)) {
+      return NextResponse.json({ error: "Invalid skin tone" }, { status: 400 });
+    }
+    updates.manager_skin_tone = body.manager_skin_tone;
+  }
+
+  if (body.manager_beard_style !== undefined) {
+    if (!BEARD_STYLES.includes(body.manager_beard_style)) {
+      return NextResponse.json({ error: "Invalid beard style" }, { status: 400 });
+    }
+    updates.manager_beard_style = body.manager_beard_style;
+  }
+
+  if (body.captain_player_id !== undefined) {
+    updates.captain_player_id =
+      typeof body.captain_player_id === "string" && body.captain_player_id.length > 0
+        ? body.captain_player_id
+        : null;
+  }
+
+  if (body.onboarding_completed !== undefined) {
+    updates.onboarding_completed = Boolean(body.onboarding_completed);
+  }
+
+  if (body.account_status !== undefined) {
+    if (!ACCOUNT_STATUSES.includes(body.account_status)) {
+      return NextResponse.json({ error: "Invalid account status" }, { status: 400 });
+    }
+
+    const nextStatus = body.account_status as AccountStatus;
+    const { data: currentProfile } = await supabase
+      .from("profiles")
+      .select("account_status")
+      .eq("id", user.id)
+      .single();
+
+    if (currentProfile?.account_status === "deactivated" && nextStatus !== "deactivated") {
+      return NextResponse.json(
+        { error: "Deactivated accounts cannot be reactivated from this endpoint" },
+        { status: 400 }
+      );
+    }
+
+    updates.account_status = nextStatus;
+    if (nextStatus === "paused") {
+      updates.paused_at = new Date().toISOString();
+      updates.deactivated_at = null;
+    }
+    if (nextStatus === "active") {
+      updates.paused_at = null;
+      updates.deactivated_at = null;
+    }
+    if (nextStatus === "deactivated") {
+      updates.paused_at = null;
+      updates.deactivated_at = new Date().toISOString();
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

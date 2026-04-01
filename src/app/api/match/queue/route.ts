@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
 import type { Tactics } from "@/lib/types";
 import { makeCompetitiveError, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
+import { countSavedStarters } from "@/lib/squad/persisted-squad";
 
 // Ghost opponent generation (server-side, no client imports)
 function generateGhostTactics(): Tactics {
@@ -30,13 +31,13 @@ function buildErrorResponse(code: Parameters<typeof makeCompetitiveError>[0], me
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getStarterCount(supabase: any, userId: string): Promise<number> {
-  const { count } = await supabase
+  const { data } = await supabase
     .from("squads")
-    .select("id", { count: "exact", head: true })
+    .select("player_ids")
     .eq("user_id", userId)
-    .eq("is_starter", true);
+    .maybeSingle();
 
-  return count ?? 0;
+  return countSavedStarters(data);
 }
 
 // POST: Join matchmaking queue
@@ -406,15 +407,22 @@ async function tryFindMatch(supabase: any, userId: string, elo: number, joinedAt
 
   // Get both players' squads (as Player objects via player_id lookup)
   const [homeSquadRes, awaySquadRes, homeTacticsRes, awayTacticsRes] = await Promise.all([
-    supabase.from("squads").select("*").eq("user_id", userId).eq("is_starter", true),
-    supabase.from("squads").select("*").eq("user_id", opponent.user_id).eq("is_starter", true),
+    supabase.from("squads").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("squads").select("*").eq("user_id", opponent.user_id).maybeSingle(),
     supabase.from("tactics").select("*").eq("user_id", userId).single(),
     supabase.from("tactics").select("*").eq("user_id", opponent.user_id).single(),
   ]);
 
-  // We store the squad row data; the simulate endpoint will resolve player objects
-  const homeSquadRows = homeSquadRes.data ?? [];
-  const awaySquadRows = awaySquadRes.data ?? [];
+  if (
+    countSavedStarters(homeSquadRes.data) < RANKED_MIN_STARTERS ||
+    countSavedStarters(awaySquadRes.data) < RANKED_MIN_STARTERS
+  ) {
+    return null;
+  }
+
+  // We store squad row data; the simulate endpoint resolves player objects.
+  const homeSquadRows = homeSquadRes.data ? [homeSquadRes.data] : [];
+  const awaySquadRows = awaySquadRes.data ? [awaySquadRes.data] : [];
 
   const homeTactics = homeTacticsRes.data
     ? {
@@ -478,7 +486,7 @@ async function createGhostMatch(supabase: any, userId: string, userElo: number) 
     .from("squads")
     .select("*")
     .eq("user_id", userId)
-    .eq("is_starter", true);
+    .maybeSingle();
 
   const { data: tacticsData } = await supabase
     .from("tactics")
@@ -486,7 +494,7 @@ async function createGhostMatch(supabase: any, userId: string, userElo: number) 
     .eq("user_id", userId)
     .single();
 
-  if (!squadRows || squadRows.length === 0) return null;
+  if (countSavedStarters(squadRows) < RANKED_MIN_STARTERS) return null;
 
   const userTactics = tacticsData
     ? {
@@ -523,7 +531,7 @@ async function createGhostMatch(supabase: any, userId: string, userElo: number) 
       .from("squads")
       .select("*")
       .eq("user_id", ghost.id)
-      .eq("is_starter", true);
+      .maybeSingle();
 
     const { data: ghostTacticsData } = await supabase
       .from("tactics")
@@ -531,8 +539,8 @@ async function createGhostMatch(supabase: any, userId: string, userElo: number) 
       .eq("user_id", ghost.id)
       .single();
 
-    if (ghostSquadData && ghostSquadData.length >= 11) {
-      ghostSquad = ghostSquadData;
+    if (countSavedStarters(ghostSquadData) >= RANKED_MIN_STARTERS) {
+      ghostSquad = [ghostSquadData];
       if (ghostTacticsData) {
         ghostTactics = {
           formation: ghostTacticsData.formation,
@@ -555,7 +563,7 @@ async function createGhostMatch(supabase: any, userId: string, userElo: number) 
       away_user_id: null, // ghost match
       match_type: "ranked",
       status: "accepted",
-      home_squad: squadRows,
+      home_squad: squadRows ? [squadRows] : [],
       away_squad: ghostSquad.length > 0 ? ghostSquad : [],
       home_tactics: userTactics,
       away_tactics: ghostTactics,

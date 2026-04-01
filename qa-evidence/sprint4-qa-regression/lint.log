@@ -1,0 +1,41 @@
+$ date -u
+Tue Mar 31 21:59:01 UTC 2026
+
+$ npm run lint
+
+> tacticsduel@0.1.0 lint
+> eslint
+
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/app/(game)/draft/[id]/page.tsx
+  163:6  warning  React Hook useEffect has a missing dependency: 'draft'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/app/(game)/onboarding/page.tsx
+  59:16  warning  'removePlayer' is assigned a value but never used                                                                                  @typescript-eslint/no-unused-vars
+  76:6   warning  React Hook useEffect has missing dependencies: 'posFilter' and 'startersFull'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  83:6   warning  React Hook useEffect has a missing dependency: 'step'. Either include it or remove the dependency array                            react-hooks/exhaustive-deps
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/app/api/draft/create/route.ts
+  70:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/app/api/rewards/claim/route.ts
+  58:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/components/share/ResultCard.tsx
+  24:3  warning  'divPointsChange' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/components/squad/SquadHubPage.tsx
+  74:9  warning  'formation' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/components/squad/TacticsForm.tsx
+  87:10  warning  'loaded' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/lib/engine/match-events.ts
+  1:15  warning  'EventType' is defined but never used   @typescript-eslint/no-unused-vars
+  1:26  warning  'MatchEvent' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel/src/lib/supabase/middleware.ts
+  18:48  warning  'options' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 12 problems (0 errors, 12 warnings)
+

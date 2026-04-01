@@ -181,6 +181,7 @@ export interface Profile {
   id: string;
   username: string;
   club_name: string;
+  manager_name?: string;
   division: number;
   division_points: number;
   elo_rating: number;
@@ -193,6 +194,14 @@ export interface Profile {
   favorite_team?: string;
   age?: number;
   captain_player_id?: string;
+  manager_avatar_archetype?: string;
+  manager_hair_style?: string;
+  manager_hair_color?: string;
+  manager_skin_tone?: string;
+  manager_beard_style?: string;
+  account_status?: "active" | "paused" | "deactivated";
+  paused_at?: string | null;
+  deactivated_at?: string | null;
   onboarding_completed: boolean;
   wallet_address?: string;
   created_at: string;

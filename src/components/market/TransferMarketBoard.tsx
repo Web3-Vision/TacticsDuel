@@ -18,6 +18,7 @@ interface TransferMarketBoardProps {
 }
 
 type RequestState = "idle" | "loading" | "error";
+type MessageTone = "neutral" | "success" | "warning";
 
 function formatTimeLeft(expiresAt: string): string {
   const diffMs = new Date(expiresAt).getTime() - Date.now();
@@ -52,6 +53,13 @@ function reasonToText(reason: BidGuardReason | null, minBid: number): string {
   }
 }
 
+function resolveMessageTone(message: string | undefined): MessageTone {
+  if (!message) return "neutral";
+  if (message.includes("submitted") || message.includes("settled")) return "success";
+  if (message.includes("failed") || message.includes("error")) return "warning";
+  return "neutral";
+}
+
 export default function TransferMarketBoard({
   initialListings,
   currentUserId,
@@ -64,6 +72,8 @@ export default function TransferMarketBoard({
   const [bidDrafts, setBidDrafts] = useState<Record<string, string>>({});
   const [bidStatus, setBidStatus] = useState<Record<string, string>>({});
   const [submittingListingId, setSubmittingListingId] = useState<string | null>(null);
+  const [settleStatus, setSettleStatus] = useState<Record<string, string>>({});
+  const [settlingListingId, setSettlingListingId] = useState<string | null>(null);
 
   const loadListings = useCallback(async () => {
     setRequestState("loading");
@@ -96,6 +106,18 @@ export default function TransferMarketBoard({
   const openListings = useMemo(() => {
     return listings.filter((listing) => listing.status === "open");
   }, [listings]);
+
+  const sellerOpenListings = useMemo(() => {
+    if (!currentUserId) return [];
+    return openListings.filter((listing) => listing.seller_user_id === currentUserId);
+  }, [currentUserId, openListings]);
+
+  const readyToSettleCount = useMemo(() => {
+    return sellerOpenListings.filter((listing) => {
+      const isExpired = new Date(listing.expires_at).getTime() <= Date.now();
+      return !isExpired && !!listing.highest_bidder_user_id && listing.current_price >= listing.ask_price;
+    }).length;
+  }, [sellerOpenListings]);
 
   async function submitBid(listing: TransferListing) {
     const rawDraft = bidDrafts[listing.id] ?? String(getMinimumBid(listing));
@@ -155,6 +177,46 @@ export default function TransferMarketBoard({
     }
   }
 
+  async function settleListing(listing: TransferListing) {
+    setSettlingListingId(listing.id);
+    setSettleStatus((current) => ({ ...current, [listing.id]: "Settling sale..." }));
+    try {
+      const response = await fetch("/api/market/settle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          listingId: listing.id,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setSettleStatus((current) => ({
+          ...current,
+          [listing.id]: payload?.error ?? "Settlement failed",
+        }));
+        return;
+      }
+
+      const finalPrice = Number(payload?.settlement?.finalPrice ?? listing.current_price);
+      setSettleStatus((current) => ({
+        ...current,
+        [listing.id]: `Sale settled for ${formatPrice(finalPrice)}.`,
+      }));
+      await loadListings();
+    } catch (error) {
+      setSettleStatus((current) => ({
+        ...current,
+        [listing.id]: error instanceof Error ? error.message : "Settlement failed",
+      }));
+    } finally {
+      setSettlingListingId(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
       <section className="glass-panel panel-enter rounded-xl p-3">
@@ -162,7 +224,7 @@ export default function TransferMarketBoard({
           <div>
             <p className="section-title">Transfer Market</p>
             <p className="mt-1 font-mono text-xs text-text-mid">
-              Browse active listings and place bids in real time.
+              Place bids, monitor your listings, and settle winning sales from one board.
             </p>
           </div>
           <button
@@ -183,6 +245,17 @@ export default function TransferMarketBoard({
           <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
             <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Open Listings</p>
             <p className="mt-0.5 font-mono text-xs text-text tabular-nums">{openListings.length}</p>
+          </div>
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Your Listings</p>
+            <p className="mt-0.5 font-mono text-xs text-text tabular-nums">{sellerOpenListings.length}</p>
+          </div>
+          <div className="rounded-md border border-border bg-bg/65 px-2.5 py-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-dim">Ready To Settle</p>
+            <p className="mt-0.5 font-mono text-xs text-accent tabular-nums">{readyToSettleCount}</p>
           </div>
         </div>
       </section>
@@ -223,6 +296,10 @@ export default function TransferMarketBoard({
             const minBid = getMinimumBid(listing);
             const draftValue = bidDrafts[listing.id] ?? String(minBid);
             const bidAmount = Number(draftValue);
+            const isSeller = currentUserId != null && listing.seller_user_id === currentUserId;
+            const isExpired = new Date(listing.expires_at).getTime() <= Date.now();
+            const hasWinningBid = !!listing.highest_bidder_user_id && listing.current_price >= listing.ask_price;
+            const canSettle = isSeller && !isExpired && hasWinningBid;
             const guard = getBidGuard({
               listing,
               bidAmount,
@@ -230,7 +307,8 @@ export default function TransferMarketBoard({
               coins,
             });
             const uiReason = reasonToText(guard.reason, guard.minBid);
-            const statusMessage = bidStatus[listing.id] ?? uiReason;
+            const statusMessage = bidStatus[listing.id] ?? settleStatus[listing.id] ?? uiReason;
+            const messageTone = resolveMessageTone(statusMessage);
 
             return (
               <article key={listing.id} className="glass-panel panel-enter rounded-xl p-3">
@@ -243,9 +321,16 @@ export default function TransferMarketBoard({
                       {player ? `${player.position} · OVR ${player.overall}` : "Unknown player"}
                     </p>
                   </div>
-                  <p className="font-mono text-[10px] uppercase text-text-dim">
-                    {formatTimeLeft(listing.expires_at)}
-                  </p>
+                  <div className="flex flex-col items-end gap-1">
+                    <p className="font-mono text-[10px] uppercase text-text-dim">
+                      {formatTimeLeft(listing.expires_at)}
+                    </p>
+                    {isSeller && (
+                      <span className="rounded-sm border border-gold/45 bg-gold/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-gold">
+                        Your listing
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 mt-3">
@@ -270,15 +355,16 @@ export default function TransferMarketBoard({
                     inputMode="numeric"
                     className="h-9 w-full rounded-md border border-border bg-bg/65 px-2.5 font-mono text-xs text-text tabular-nums focus:border-accent focus:outline-none"
                     aria-label={`Bid amount for ${player?.name ?? listing.player_id}`}
+                    disabled={isSeller}
                   />
                   <button
                     onClick={() => {
                       submitBid(listing).catch(() => undefined);
                     }}
-                    disabled={!guard.ok || submittingListingId === listing.id}
+                    disabled={!guard.ok || submittingListingId === listing.id || isSeller}
                     className="h-9 shrink-0 rounded-md bg-accent px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-black transition-colors duration-150 hover:bg-accent-dim disabled:cursor-not-allowed disabled:bg-border disabled:text-text-dim"
                   >
-                    {submittingListingId === listing.id ? "Bidding" : "Bid"}
+                    {isSeller ? "Owner" : submittingListingId === listing.id ? "Bidding" : "Bid"}
                   </button>
                 </div>
 
@@ -286,10 +372,33 @@ export default function TransferMarketBoard({
                   Minimum bid: {formatPrice(minBid)}
                 </p>
 
+                {isSeller && (
+                  <div className="mt-2 rounded-md border border-border bg-bg/55 px-2.5 py-2">
+                    <p className="font-mono text-[10px] text-text-mid">
+                      {canSettle
+                        ? "Ask met. Settle now to finalize transfer."
+                        : "Waiting for bids at or above ask before settlement."}
+                    </p>
+                    <button
+                      onClick={() => {
+                        settleListing(listing).catch(() => undefined);
+                      }}
+                      disabled={!canSettle || settlingListingId === listing.id}
+                      className="mt-2 h-8 rounded-md border border-accent px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-accent transition-colors duration-150 hover:bg-accent/10 disabled:cursor-not-allowed disabled:border-border disabled:text-text-dim"
+                    >
+                      {settlingListingId === listing.id ? "Settling..." : "Settle Sale"}
+                    </button>
+                  </div>
+                )}
+
                 {statusMessage && (
                   <p
                     className={`font-mono text-[10px] mt-2 ${
-                      statusMessage === "Bid submitted." ? "text-accent" : "text-text-dim"
+                      messageTone === "success"
+                        ? "text-accent"
+                        : messageTone === "warning"
+                          ? "text-loss"
+                          : "text-text-dim"
                     }`}
                   >
                     {statusMessage}

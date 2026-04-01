@@ -1,0 +1,77 @@
+$ date -u
+Tue Mar 31 21:59:08 UTC 2026
+
+$ npm run build
+
+> tacticsduel@0.1.0 build
+> next build
+
+▲ Next.js 16.2.1 (Turbopack)
+- Environments: .env.local
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+✓ Compiled successfully in 1391ms
+  Running TypeScript ...
+  Finished TypeScript in 2.1s ...
+  Collecting page data using 13 workers ...
+  Generating static pages using 13 workers (0/44) ...
+  Generating static pages using 13 workers (11/44) 
+  Generating static pages using 13 workers (22/44) 
+  Generating static pages using 13 workers (33/44) 
+✓ Generating static pages using 13 workers (44/44) in 190ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/magic
+├ ƒ /api/draft/create
+├ ƒ /api/draft/pick
+├ ƒ /api/market/bids
+├ ƒ /api/market/listings
+├ ƒ /api/market/settle
+├ ƒ /api/match/invite
+├ ƒ /api/match/queue
+├ ƒ /api/match/record-ai
+├ ƒ /api/match/session
+├ ƒ /api/match/simulate
+├ ƒ /api/missions
+├ ƒ /api/profile
+├ ƒ /api/rewards/claim
+├ ƒ /auth/callback
+├ ƒ /club
+├ ƒ /club/leaderboard
+├ ƒ /club/market
+├ ƒ /club/players
+├ ƒ /club/squad
+├ ƒ /club/tactics
+├ ƒ /club/team-hub
+├ ƒ /dashboard
+├ ƒ /divisions
+├ ƒ /draft/[id]
+├ ƒ /history
+├ ƒ /home
+├ ƒ /inbox
+├ ○ /login
+├ ƒ /match/[id]
+├ ƒ /match/live
+├ ƒ /match/queue
+├ ƒ /matchday
+├ ƒ /missions
+├ ƒ /news
+├ ƒ /onboarding
+├ ƒ /play
+├ ƒ /play/confirm
+├ ƒ /profile
+├ ƒ /profile/[username]
+├ ○ /signup
+├ ƒ /squad
+└ ƒ /squad/tactics
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

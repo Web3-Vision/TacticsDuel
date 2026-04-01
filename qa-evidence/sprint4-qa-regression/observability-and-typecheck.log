@@ -1,0 +1,23 @@
+$ date -u
+Tue Mar 31 21:58:48 UTC 2026
+
+$ npm run test -- src/lib/observability/realtime.test.ts
+
+> tacticsduel@0.1.0 test
+> vitest run src/lib/observability/realtime.test.ts
+
+
+ RUN  v4.1.2 /Users/altugozturk/.paperclip/instances/default/projects/2a181324-4f39-4fd9-a58a-881106f4f281/ddaa96f3-49a3-46e4-98ba-ce160c8b6617/_default/TacticsDuel
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  23:58:48
+   Duration  129ms (transform 14ms, setup 0ms, import 19ms, tests 9ms, environment 0ms)
+
+
+$ npm run typecheck
+
+> tacticsduel@0.1.0 typecheck
+> tsc --noEmit
+

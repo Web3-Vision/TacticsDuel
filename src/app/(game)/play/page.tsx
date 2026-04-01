@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/types";
 import { Swords, Users, Bot, Copy, Share2, ArrowLeft, Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { evaluateRankedReadiness, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
+import { countSavedStarters } from "@/lib/squad/persisted-squad";
 
 type FriendView = "menu" | "create" | "join" | "pending";
 type InviteMode = "bring_squad" | "live_draft";
@@ -51,12 +53,12 @@ export default function PlayPage() {
 
       const [profileRes, squadRes, tacticsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).single(),
-        supabase.from("squads").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_starter", true),
+        supabase.from("squads").select("player_ids").eq("user_id", user.id).maybeSingle(),
         supabase.from("tactics").select("user_id").eq("user_id", user.id).single(),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data as Profile);
-      const starters = squadRes.count ?? 0;
+      const starters = countSavedStarters(squadRes.data);
       setSavedStarterCount(starters);
       setSquadSaved(starters >= RANKED_MIN_STARTERS);
       setTacticsSaved(!!tacticsRes.data);
@@ -513,6 +515,11 @@ export default function PlayPage() {
   }
 
   const rankedMessage = rankedReadiness.message;
+  const rankedActionLabel = rankedReadiness.code === "squad_unlocked"
+    ? "Lock required"
+    : rankedReady
+      ? "Ready"
+      : "Needs setup";
 
   return (
     <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
@@ -572,6 +579,16 @@ export default function PlayPage() {
               {checking ? "Checking readiness..." : rankedMessage}
             </p>
           </div>
+          <span
+            className={cn(
+              "rounded-sm border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]",
+              rankedReady
+                ? "border-accent/45 bg-accent/10 text-accent"
+                : "border-gold/45 bg-gold/10 text-gold",
+            )}
+          >
+            {rankedActionLabel}
+          </span>
           {profile?.squad_locked && (
             <Lock size={14} strokeWidth={1.8} className="text-accent shrink-0" />
           )}
@@ -616,6 +633,38 @@ export default function PlayPage() {
             <CheckItem done={tacticsSaved} label="Tactics configured and saved" />
             <CheckItem done={profile?.squad_locked ?? false} label="Squad locked for ranked" />
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/club/squad"
+              className="inline-flex min-h-[36px] items-center justify-center rounded-md border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-mid transition-colors duration-150 hover:border-border-light hover:text-text"
+            >
+              Review Squad
+            </Link>
+            <Link
+              href="/club/tactics"
+              className="inline-flex min-h-[36px] items-center justify-center rounded-md border border-border px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-mid transition-colors duration-150 hover:border-border-light hover:text-text"
+            >
+              Adjust Tactics
+            </Link>
+            <Link
+              href="/club/team-hub"
+              className="inline-flex min-h-[36px] items-center justify-center rounded-md border border-accent/45 bg-accent/10 px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-accent transition-colors duration-150 hover:border-accent"
+            >
+              Lock In Team Hub
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {!checking && profile?.squad_locked && (
+        <section className="glass-panel panel-enter rounded-xl border border-accent/35 p-3">
+          <p className="section-title">Lock State</p>
+          <p className="mt-1 font-mono text-xs text-accent">
+            Ranked lock active. Your squad is protected until the cycle resets.
+          </p>
+          <p className="mt-1 text-xs text-text-mid">
+            You can still browse the market and prep future moves, but lineup edits stay frozen.
+          </p>
         </section>
       )}
     </div>

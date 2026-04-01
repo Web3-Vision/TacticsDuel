@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { makeCompetitiveError, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
+import { countSavedStarters } from "@/lib/squad/persisted-squad";
 
 type InviteMode = "bring_squad" | "live_draft";
 
@@ -18,13 +19,13 @@ function parseInviteMode(value: unknown): InviteMode | null {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getStarterCount(supabase: any, userId: string): Promise<number> {
-  const { count } = await supabase
+  const { data } = await supabase
     .from("squads")
-    .select("id", { count: "exact", head: true })
+    .select("player_ids")
     .eq("user_id", userId)
-    .eq("is_starter", true);
+    .maybeSingle();
 
-  return count ?? 0;
+  return countSavedStarters(data);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -221,12 +222,12 @@ export async function PATCH(request: Request) {
             .from("squads")
             .select("*")
             .eq("user_id", invite.from_user_id)
-            .eq("is_starter", true),
+            .maybeSingle(),
           supabase
             .from("squads")
             .select("*")
             .eq("user_id", user.id)
-            .eq("is_starter", true),
+            .maybeSingle(),
           supabase
             .from("tactics")
             .select("*")
@@ -239,6 +240,16 @@ export async function PATCH(request: Request) {
             .single(),
         ]);
 
+      if (
+        countSavedStarters(homeSquad.data) < RANKED_MIN_STARTERS ||
+        countSavedStarters(awaySquad.data) < RANKED_MIN_STARTERS
+      ) {
+        return NextResponse.json(
+          buildErrorResponse("SQUAD_NOT_READY", "Both players need 11 saved starters for bring-squad matches."),
+          { status: 422 }
+        );
+      }
+
       const { data: match, error: matchError } = await supabase
         .from("matches")
         .insert({
@@ -246,8 +257,8 @@ export async function PATCH(request: Request) {
           away_user_id: user.id,
           match_type: "friendly",
           status: "accepted",
-          home_squad: homeSquad.data ?? [],
-          away_squad: awaySquad.data ?? [],
+          home_squad: homeSquad.data ? [homeSquad.data] : [],
+          away_squad: awaySquad.data ? [awaySquad.data] : [],
           home_tactics: homeTactics.data ?? {},
           away_tactics: awayTactics.data ?? {},
         })

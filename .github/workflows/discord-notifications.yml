@@ -52,9 +52,31 @@ jobs:
               ]
             }')
 
-          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "$payload"
+          response_file="$(mktemp)"
+          http_status="$(
+            curl --silent --show-error --fail-with-body \
+              --request POST "$DISCORD_WEBHOOK_URL" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              --output "$response_file" \
+              --write-out "%{http_code}"
+          )" || {
+            curl_exit="$?"
+            echo "Discord push notification failed (exit=${curl_exit}, http_status=${http_status:-unknown})"
+            if [ -s "$response_file" ]; then
+              echo "Discord webhook response body:"
+              cat "$response_file"
+            fi
+            rm -f "$response_file"
+            exit "$curl_exit"
+          }
+
+          echo "Discord push notification sent (http_status=${http_status})"
+          if [ -s "$response_file" ]; then
+            echo "Discord webhook response body:"
+            cat "$response_file"
+          fi
+          rm -f "$response_file"
 
   notify-deployment:
     if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
@@ -105,6 +127,28 @@ jobs:
               ]
             }')
 
-          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "$payload"
+          response_file="$(mktemp)"
+          http_status="$(
+            curl --silent --show-error --fail-with-body \
+              --request POST "$DISCORD_WEBHOOK_URL" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              --output "$response_file" \
+              --write-out "%{http_code}"
+          )" || {
+            curl_exit="$?"
+            echo "Discord deployment notification failed (exit=${curl_exit}, http_status=${http_status:-unknown})"
+            if [ -s "$response_file" ]; then
+              echo "Discord webhook response body:"
+              cat "$response_file"
+            fi
+            rm -f "$response_file"
+            exit "$curl_exit"
+          }
+
+          echo "Discord deployment notification sent (http_status=${http_status})"
+          if [ -s "$response_file" ]; then
+            echo "Discord webhook response body:"
+            cat "$response_file"
+          fi
+          rm -f "$response_file"

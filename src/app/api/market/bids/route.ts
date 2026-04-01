@@ -1,8 +1,37 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-function isExpired(expiresAt: string): boolean {
-  return new Date(expiresAt).getTime() < Date.now();
+type BidRpcRow = {
+  bid_id: string | null;
+  listing_id: string | null;
+  bidder_user_id: string | null;
+  bid_amount: number | null;
+  created_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+};
+
+function mapBidErrorToStatus(errorCode: string): number {
+  switch (errorCode) {
+    case "unauthorized":
+      return 401;
+    case "invalid_bid_amount":
+    case "own_listing":
+    case "bid_too_low":
+      return 400;
+    case "listing_not_found":
+    case "profile_not_found":
+      return 404;
+    case "listing_expired":
+      return 410;
+    case "listing_not_open":
+    case "squad_locked":
+      return 409;
+    case "insufficient_coins":
+      return 400;
+    default:
+      return 500;
+  }
 }
 
 export async function POST(request: Request) {
@@ -28,88 +57,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "bidAmount must be a positive integer" }, { status: 400 });
     }
 
-    const [{ data: profile, error: profileError }, { data: listing, error: listingError }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, coins")
-        .eq("id", user.id)
-        .single(),
-      supabase
-        .from("transfer_listings")
-        .select("id, seller_user_id, ask_price, current_price, highest_bidder_user_id, status, expires_at")
-        .eq("id", listingId)
-        .single(),
-    ]);
+    const { data, error } = await supabase.rpc("place_transfer_bid", {
+      p_listing_id: listingId,
+      p_bidder_user_id: user.id,
+      p_bid_amount: bidAmount,
+      p_now: new Date().toISOString(),
+    });
 
-    if (profileError || !profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-    }
-
-    if (listingError || !listing) {
-      return NextResponse.json({ error: "Listing not found" }, { status: 404 });
-    }
-
-    if (listing.status !== "open") {
-      return NextResponse.json({ error: "Listing is not open" }, { status: 409 });
-    }
-
-    if (listing.seller_user_id === user.id) {
-      return NextResponse.json({ error: "Cannot bid on your own listing" }, { status: 400 });
-    }
-
-    if (isExpired(listing.expires_at)) {
-      await supabase
-        .from("transfer_listings")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("id", listing.id)
-        .eq("status", "open");
-      return NextResponse.json({ error: "Listing has expired" }, { status: 410 });
-    }
-
-    const minBid = listing.highest_bidder_user_id
-      ? Math.max(listing.current_price + 1, listing.ask_price)
-      : listing.ask_price;
-
-    if (bidAmount < minBid) {
-      return NextResponse.json(
-        { error: `Bid must be at least ${minBid}` },
-        { status: 400 },
-      );
-    }
-
-    if ((profile.coins ?? 0) < bidAmount) {
-      return NextResponse.json({ error: "Insufficient coins" }, { status: 400 });
-    }
-
-    const { data: bid, error: bidInsertError } = await supabase
-      .from("transfer_bids")
-      .insert({
-        listing_id: listingId,
-        bidder_user_id: user.id,
-        bid_amount: bidAmount,
-      })
-      .select("id, listing_id, bidder_user_id, bid_amount, created_at")
-      .single();
-
-    if (bidInsertError || !bid) {
+    if (error) {
       return NextResponse.json({ error: "Failed to place bid" }, { status: 500 });
     }
 
-    const { error: listingUpdateError } = await supabase
-      .from("transfer_listings")
-      .update({
-        current_price: bidAmount,
-        highest_bidder_user_id: user.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", listingId)
-      .eq("status", "open");
-
-    if (listingUpdateError) {
-      return NextResponse.json({ error: "Bid accepted but listing update failed" }, { status: 500 });
+    const row = (Array.isArray(data) && data[0] ? data[0] : null) as BidRpcRow | null;
+    if (!row) {
+      return NextResponse.json({ error: "Failed to place bid" }, { status: 500 });
     }
 
-    return NextResponse.json({ bid }, { status: 201 });
+    if (row.error_code) {
+      return NextResponse.json(
+        { error: row.error_message ?? "Failed to place bid" },
+        { status: mapBidErrorToStatus(row.error_code) },
+      );
+    }
+
+    return NextResponse.json({
+      bid: {
+        id: row.bid_id,
+        listing_id: row.listing_id,
+        bidder_user_id: row.bidder_user_id,
+        bid_amount: row.bid_amount,
+        created_at: row.created_at,
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error("Transfer bids POST error", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

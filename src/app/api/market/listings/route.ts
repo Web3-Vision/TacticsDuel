@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     const [{ data: profile, error: profileError }, { data: squad, error: squadError }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id, transfers_remaining")
+        .select("id, transfers_remaining, squad_locked")
         .eq("id", user.id)
         .single(),
       supabase
@@ -99,6 +99,10 @@ export async function POST(request: Request) {
 
     if ((profile.transfers_remaining ?? 0) <= 0) {
       return NextResponse.json({ error: "No transfers remaining" }, { status: 400 });
+    }
+
+    if (profile.squad_locked) {
+      return NextResponse.json({ error: "Squad is locked" }, { status: 409 });
     }
 
     if (!hasPlayerInSquad(squad, playerId)) {

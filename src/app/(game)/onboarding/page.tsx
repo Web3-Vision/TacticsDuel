@@ -7,6 +7,18 @@ import { getFormation } from "@/lib/data/formations";
 import { FORMATIONS } from "@/lib/data/formations";
 import { cn, SALARY_CAP, formatPrice } from "@/lib/utils";
 import type { Player, Position } from "@/lib/types";
+import {
+  MANAGER_ARCHETYPES,
+  HAIR_STYLES,
+  HAIR_COLORS,
+  SKIN_TONES,
+  BEARD_STYLES,
+  type ManagerArchetype,
+  type HairStyle,
+  type HairColor,
+  type SkinTone,
+  type BeardStyle,
+} from "@/lib/profile-options";
 
 const TOP_CLUBS = [
   "Real Madrid", "Barcelona", "Man City", "Liverpool", "Arsenal",
@@ -39,8 +51,14 @@ function getNextSuggestedSlot(
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [managerName, setManagerName] = useState("");
   const [favoriteTeam, setFavoriteTeam] = useState("");
   const [age, setAge] = useState("");
+  const [managerArchetype, setManagerArchetype] = useState<ManagerArchetype>(MANAGER_ARCHETYPES[0]);
+  const [hairStyle, setHairStyle] = useState<HairStyle>(HAIR_STYLES[0]);
+  const [hairColor, setHairColor] = useState<HairColor>(HAIR_COLORS[0]);
+  const [skinTone, setSkinTone] = useState<SkinTone>(SKIN_TONES[2]);
+  const [beardStyle, setBeardStyle] = useState<BeardStyle>(BEARD_STYLES[0]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -180,8 +198,14 @@ export default function OnboardingPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          manager_name: managerName.trim(),
           favorite_team: favoriteTeam || null,
           age: age ? parseInt(age) : null,
+          manager_avatar_archetype: managerArchetype,
+          manager_hair_style: hairStyle,
+          manager_hair_color: hairColor,
+          manager_skin_tone: skinTone,
+          manager_beard_style: beardStyle,
           captain_player_id: captainId,
           onboarding_completed: true,
         }),
@@ -238,6 +262,21 @@ export default function OnboardingPage() {
           <div className="w-full max-w-[340px] flex flex-col gap-3">
             <div>
               <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                Manager Name
+              </label>
+              <input
+                type="text"
+                value={managerName}
+                onChange={(e) => setManagerName(e.target.value)}
+                placeholder="e.g. Alex Rivera"
+                minLength={2}
+                maxLength={40}
+                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text placeholder:text-text-dim focus:outline-none focus:border-accent transition-colors duration-100"
+              />
+            </div>
+
+            <div>
+              <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
                 Favorite Team
               </label>
               <select
@@ -267,8 +306,93 @@ export default function OnboardingPage() {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                  Character
+                </label>
+                <select
+                  value={managerArchetype}
+                  onChange={(e) => setManagerArchetype(e.target.value as ManagerArchetype)}
+                  className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-2 font-mono text-xs text-text focus:outline-none focus:border-accent transition-colors duration-100"
+                >
+                  {MANAGER_ARCHETYPES.map((archetype) => (
+                    <option key={archetype} value={archetype}>
+                      {archetype}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                  Skin Tone
+                </label>
+                <select
+                  value={skinTone}
+                  onChange={(e) => setSkinTone(e.target.value as SkinTone)}
+                  className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-2 font-mono text-xs text-text focus:outline-none focus:border-accent transition-colors duration-100"
+                >
+                  {SKIN_TONES.map((tone) => (
+                    <option key={tone} value={tone}>
+                      {tone}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                  Hair Style
+                </label>
+                <select
+                  value={hairStyle}
+                  onChange={(e) => setHairStyle(e.target.value as HairStyle)}
+                  className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-2 font-mono text-xs text-text focus:outline-none focus:border-accent transition-colors duration-100"
+                >
+                  {HAIR_STYLES.map((style) => (
+                    <option key={style} value={style}>
+                      {style}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                  Hair Color
+                </label>
+                <select
+                  value={hairColor}
+                  onChange={(e) => setHairColor(e.target.value as HairColor)}
+                  className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-2 font-mono text-xs text-text focus:outline-none focus:border-accent transition-colors duration-100"
+                >
+                  {HAIR_COLORS.map((color) => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-mono text-[10px] text-text-dim uppercase tracking-wider mb-1">
+                Beard
+              </label>
+              <select
+                value={beardStyle}
+                onChange={(e) => setBeardStyle(e.target.value as BeardStyle)}
+                className="w-full h-[44px] bg-surface border border-border rounded-[4px] px-3 font-mono text-sm text-text focus:outline-none focus:border-accent transition-colors duration-100"
+              >
+                {BEARD_STYLES.map((style) => (
+                  <option key={style} value={style}>
+                    {style}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               onClick={() => setStep(2)}
+              disabled={managerName.trim().length < 2}
               className="w-full h-[44px] mt-4 bg-accent text-black font-mono text-sm font-medium uppercase tracking-wide rounded-[4px] hover:bg-accent-dim transition-colors duration-100"
             >
               Continue

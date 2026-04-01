@@ -207,6 +207,11 @@ export default function DraftPage() {
     .sort((a, b) => b.overall - a.overall);
 
   const isComplete = draft?.status === "completed";
+  const currentPick = Math.min(draft?.current_pick ?? 1, TOTAL_PICKS);
+  const progressPercent = Math.min(100, Math.max(0, (currentPick / TOTAL_PICKS) * 100));
+  const picksRemaining = Math.max(0, TOTAL_PICKS - picks.length);
+  const myPickSlotsRemaining = Math.max(0, 11 - myPicks.length);
+  const opponentPickSlotsRemaining = Math.max(0, 11 - opponentPicks.length);
 
   // ── Loading / error states ─────────────────────────────────────────────
 
@@ -265,9 +270,35 @@ export default function DraftPage() {
             </span>
           )}
           <span className="font-mono text-xs text-text-dim ml-auto tabular-nums">
-            Pick {Math.min(draft?.current_pick ?? 1, TOTAL_PICKS)}/
+            Pick {currentPick}/
             {TOTAL_PICKS}
           </span>
+        </div>
+
+        <div className="mt-2">
+          <div className="h-1.5 rounded-full bg-bg/70">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                isMyTurn && !isComplete ? "bg-accent" : "bg-text-mid/70",
+              )}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            <div className="rounded-sm border border-border bg-bg/65 px-2 py-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-wide text-text-dim">Remaining</p>
+              <p className="mt-0.5 font-mono text-[11px] text-text tabular-nums">{picksRemaining}</p>
+            </div>
+            <div className="rounded-sm border border-border bg-bg/65 px-2 py-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-wide text-text-dim">Your Slots</p>
+              <p className="mt-0.5 font-mono text-[11px] text-accent tabular-nums">{myPickSlotsRemaining}</p>
+            </div>
+            <div className="rounded-sm border border-border bg-bg/65 px-2 py-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-wide text-text-dim">Opp Slots</p>
+              <p className="mt-0.5 font-mono text-[11px] text-text tabular-nums">{opponentPickSlotsRemaining}</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -442,6 +473,18 @@ export default function DraftPage() {
 
       {/* Pick action bar */}
       <div className="sticky bottom-0 bg-surface border-t border-border px-4 py-3 pb-safe">
+        {!isComplete && (
+          <p
+            className={cn(
+              "mb-2 font-mono text-[10px]",
+              isMyTurn ? "text-accent" : "text-text-dim",
+            )}
+          >
+            {isMyTurn
+              ? "You are on the clock. Select your player before the timer expires."
+              : "Opponent is picking. Review options and pre-select your next target."}
+          </p>
+        )}
         {isComplete ? (
           <div className="flex items-center justify-center h-11">
             <span className="font-mono text-sm text-accent">
