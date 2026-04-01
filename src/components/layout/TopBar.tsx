@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Trophy, Coins } from "lucide-react";
+import { Trophy, Coins, UserCircle2 } from "lucide-react";
 import type { Profile } from "@/lib/types";
 import { DIVISIONS } from "@/lib/utils";
 
@@ -44,10 +44,11 @@ export default function TopBar({ profile }: TopBarProps) {
 
         <Link
           href="/profile"
-          className="flex size-8 items-center justify-center rounded-md border border-border/80 bg-surface-alt text-[11px] font-semibold text-text-mid transition-colors duration-150 hover:border-accent hover:text-text"
+          className="flex h-8 items-center gap-1 rounded-md border border-border/80 bg-surface-alt px-2 text-[11px] font-semibold text-text-mid transition-colors duration-150 hover:border-accent hover:text-text"
           aria-label="Open profile"
         >
-          <span className="font-mono">{initial}</span>
+          <UserCircle2 size={12} strokeWidth={1.8} />
+          <span className="font-mono">{initial} Profile</span>
         </Link>
       </div>
     </header>
