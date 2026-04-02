@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
+import { persistSessionSnapshot } from "@/lib/multiplayer/durable-session-store";
 import {
+  type MatchSession,
   SessionError,
   closeSession,
   createRoom,
@@ -92,6 +94,27 @@ function getSubmitTurnRecoveryHint(sessionId: string, currentUserId: string | nu
   }
 }
 
+function getSubmitTurnRecoverySession(sessionId: string, currentUserId: string | null): MatchSession | null {
+  if (!sessionId || !currentUserId) {
+    return null;
+  }
+
+  try {
+    return getSessionForUser(sessionId, currentUserId);
+  } catch {
+    return null;
+  }
+}
+
+async function persistSessionChange(session: MatchSession, eventType: string, eventPayload: Record<string, unknown> = {}) {
+  try {
+    const serviceClient = await createServiceClient();
+    await persistSessionSnapshot(serviceClient, session, eventType, eventPayload);
+  } catch (error) {
+    console.error(`Failed to persist durable session event: ${eventType}`, error);
+  }
+}
+
 async function getAuthenticatedUserId() {
   const supabase = await createClient();
   const {
@@ -138,6 +161,13 @@ export async function POST(request: Request) {
     if (action === "create_room") {
       const matchId = typeof body?.matchId === "string" ? body.matchId : null;
       const session = createRoom(userId, matchId);
+      await persistSessionChange(session, "session_created", { action: contextAction, userId });
+      logDomainEvent({
+        service: "match.session",
+        event: "session_created",
+        traceId,
+        context: { action: contextAction, sessionId: session.id, matchId: session.matchId ?? "", userId },
+      });
       return respond({ session: formatSessionResponse(session, userId) }, 201, {
         action: contextAction,
         sessionId: session.id,
@@ -152,6 +182,7 @@ export async function POST(request: Request) {
       }
 
       const session = joinRoom(userId, roomCode);
+      await persistSessionChange(session, "participant_joined", { action: contextAction, userId });
       return respond({ session: formatSessionResponse(session, userId) }, 200, {
         action: contextAction,
         sessionId: session.id,
@@ -166,6 +197,7 @@ export async function POST(request: Request) {
       }
 
       const session = reconnect(sessionId, userId);
+      await persistSessionChange(session, "participant_reconnected", { action: contextAction, userId });
       logDomainEvent({
         service: "match.session",
         event: "participant_reconnected",
@@ -182,6 +214,7 @@ export async function POST(request: Request) {
       }
 
       const session = disconnect(sessionId, userId);
+      await persistSessionChange(session, "participant_disconnected", { action: contextAction, userId });
       logDomainEvent({
         service: "match.session",
         event: "participant_disconnected",
@@ -209,6 +242,7 @@ export async function POST(request: Request) {
       }
 
       const session = submitTurn(sessionId, userId, turnNumber, payload);
+      await persistSessionChange(session, "turn_submitted", { action: contextAction, userId, turnNumber });
       return respond({ session: formatSessionResponse(session, userId) }, 200, {
         action: contextAction,
         sessionId,
@@ -223,6 +257,7 @@ export async function POST(request: Request) {
       }
 
       const session = closeSession(sessionId, userId);
+      await persistSessionChange(session, "session_closed", { action: contextAction, userId });
       return respond({ session: formatSessionResponse(session, userId) }, 200, { action: contextAction, sessionId });
     }
 
@@ -244,8 +279,21 @@ export async function POST(request: Request) {
       const sessionState = shouldIncludeRecoveryHint
         ? getSubmitTurnRecoveryHint(observedSessionId, userId)
         : null;
+      const recoverySession = shouldIncludeRecoveryHint
+        ? getSubmitTurnRecoverySession(observedSessionId, userId)
+        : null;
 
       if (shouldIncludeRecoveryHint) {
+        if (recoverySession) {
+          await persistSessionChange(recoverySession, "turn_rejected", {
+            action: observedAction,
+            userId,
+            reason: error.code,
+            authoritativeTurnNumber: recoverySession.turnNumber,
+            authoritativePhase: recoverySession.phase,
+            authoritativeActiveSide: recoverySession.activeSide,
+          });
+        }
         logDomainEvent({
           service: "match.session",
           event: "turn_submission_rejected",

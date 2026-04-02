@@ -41,6 +41,7 @@ Current events:
 
 - `match.queue` -> `match_found_immediately`
 - `match.queue` -> `ghost_match_created`
+- `match.session` -> `session_created`
 - `match.session` -> `participant_reconnected`
 - `match.session` -> `participant_disconnected`
 - `match.session` -> `turn_desync_detected`

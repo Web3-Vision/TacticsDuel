@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
-import type { Tactics } from "@/lib/types";
+import type { Mentality, Pressing, Tactics, Tempo, Width } from "@/lib/types";
 import { makeCompetitiveError, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
+import { allocateRankedMatch, type RankedMatchAllocationRepository } from "@/lib/multiplayer/queue-allocation";
 import { countSavedStarters } from "@/lib/squad/persisted-squad";
 
 // Ghost opponent generation (server-side, no client imports)
@@ -29,6 +30,39 @@ function buildErrorResponse(code: Parameters<typeof makeCompetitiveError>[0], me
   return { ok: false, error: makeCompetitiveError(code, message, retryable) };
 }
 
+type ClaimMatchmakingOpponentRpcRow = {
+  claim_id: string | null;
+  claimer_queue_id: string | null;
+  opponent_queue_id: string | null;
+  opponent_user_id: string | null;
+  opponent_elo: number | null;
+  opponent_joined_at: string | null;
+  claim_expires_at: string | null;
+};
+
+type FinalizeClaimRpcRow = boolean | null;
+
+const MENTALITIES: Mentality[] = ["Defensive", "Cautious", "Balanced", "Attacking", "All-out Attack"];
+const TEMPOS: Tempo[] = ["Slow", "Normal", "Fast"];
+const PRESSINGS: Pressing[] = ["Low", "Medium", "High"];
+const WIDTHS: Width[] = ["Narrow", "Normal", "Wide"];
+
+function asMentality(value: unknown, fallback: Mentality): Mentality {
+  return MENTALITIES.includes(value as Mentality) ? (value as Mentality) : fallback;
+}
+
+function asTempo(value: unknown, fallback: Tempo): Tempo {
+  return TEMPOS.includes(value as Tempo) ? (value as Tempo) : fallback;
+}
+
+function asPressing(value: unknown, fallback: Pressing): Pressing {
+  return PRESSINGS.includes(value as Pressing) ? (value as Pressing) : fallback;
+}
+
+function asWidth(value: unknown, fallback: Width): Width {
+  return WIDTHS.includes(value as Width) ? (value as Width) : fallback;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getStarterCount(supabase: any, userId: string): Promise<number> {
   const { data } = await supabase
@@ -38,6 +72,117 @@ async function getStarterCount(supabase: any, userId: string): Promise<number> {
     .maybeSingle();
 
   return countSavedStarters(data);
+}
+
+function normalizeTactics(raw: Record<string, unknown> | null): Tactics {
+  return raw
+    ? {
+        formation: String(raw.formation ?? "4-3-3"),
+        mentality: asMentality(raw.mentality, "Balanced"),
+        tempo: asTempo(raw.tempo, "Normal"),
+        pressing: asPressing(raw.pressing, "Medium"),
+        width: asWidth(raw.width, "Normal"),
+        htIfLosingMentality: asMentality(raw.htIfLosingMentality ?? raw.ht_if_losing_mentality, "Attacking"),
+        htIfWinningMentality: asMentality(raw.htIfWinningMentality ?? raw.ht_if_winning_mentality, "Defensive"),
+      }
+    : {
+        formation: "4-3-3",
+        mentality: "Balanced",
+        tempo: "Normal",
+        pressing: "Medium",
+        width: "Normal",
+        htIfLosingMentality: "Attacking",
+        htIfWinningMentality: "Defensive",
+      };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createRankedMatchRepository(supabase: any): RankedMatchAllocationRepository {
+  return {
+    async claimOpponent(input) {
+      const { data, error } = await supabase.rpc("claim_matchmaking_opponent", {
+        p_user_id: input.userId,
+        p_elo: input.elo,
+        p_elo_range: input.eloRange,
+        p_lease_seconds: 30,
+      });
+
+      if (error) {
+        console.error("claim_matchmaking_opponent rpc error", error);
+        return null;
+      }
+
+      const row = (Array.isArray(data) ? data[0] : null) as ClaimMatchmakingOpponentRpcRow | null;
+      if (!row?.claim_id || !row.opponent_user_id || typeof row.opponent_elo !== "number") {
+        return null;
+      }
+
+      return {
+        claimId: row.claim_id,
+        opponentUserId: row.opponent_user_id,
+        opponentElo: row.opponent_elo,
+      };
+    },
+    async loadParticipant(userId) {
+      const [squadResult, tacticsResult] = await Promise.all([
+        supabase.from("squads").select("*").eq("user_id", userId).maybeSingle(),
+        supabase.from("tactics").select("*").eq("user_id", userId).maybeSingle(),
+      ]);
+
+      return {
+        squadRow: squadResult.data ? { player_ids: squadResult.data.player_ids } : null,
+        tactics: tacticsResult.data ?? null,
+      };
+    },
+    async createMatch(input) {
+      const { data, error } = await supabase
+        .from("matches")
+        .insert({
+          home_user_id: input.homeUserId,
+          away_user_id: input.awayUserId,
+          match_type: "ranked",
+          status: "accepted",
+          home_squad: input.home.squadRow ? [input.home.squadRow] : [],
+          away_squad: input.away.squadRow ? [input.away.squadRow] : [],
+          home_tactics: normalizeTactics(input.home.tactics),
+          away_tactics: normalizeTactics(input.away.tactics),
+          home_elo_before: input.homeElo,
+          away_elo_before: input.awayElo,
+        })
+        .select("id")
+        .single();
+
+      if (error || !data?.id) {
+        console.error("ranked match insert error", error);
+        return null;
+      }
+
+      return { id: data.id };
+    },
+    async finalizeClaim(claimId, matchId) {
+      const { data, error } = await supabase.rpc("finalize_matchmaking_claim", {
+        p_claim_id: claimId,
+        p_match_id: matchId,
+      });
+
+      if (error) {
+        console.error("finalize_matchmaking_claim rpc error", error);
+        return false;
+      }
+
+      return Boolean(data as FinalizeClaimRpcRow);
+    },
+    async releaseClaim(claimId, reason) {
+      const { error } = await supabase.rpc("release_matchmaking_claim", {
+        p_claim_id: claimId,
+        p_reason: reason,
+      });
+
+      if (error) {
+        console.error("release_matchmaking_claim rpc error", error);
+      }
+    },
+  };
 }
 
 // POST: Join matchmaking queue
@@ -62,6 +207,7 @@ export async function POST() {
   try {
     const timings: Record<string, number> = {};
     const supabase = await createClient();
+    const serviceSupabase = await createServiceClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -161,7 +307,7 @@ export async function POST() {
 
     // Try to find a match immediately
     const matchmakingStartedAt = Date.now();
-    const match = await tryFindMatch(supabase, user.id, profile.elo_rating);
+    const match = await tryFindMatch(serviceSupabase, user.id, profile.elo_rating);
     timings.matchmakingMs = Date.now() - matchmakingStartedAt;
     if (match?.id) {
       logDomainEvent({
@@ -216,6 +362,7 @@ export async function GET() {
   try {
     const timings: Record<string, number> = {};
     const supabase = await createClient();
+    const serviceSupabase = await createServiceClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -277,7 +424,7 @@ export async function GET() {
 
     const matchmakingStartedAt = Date.now();
     const match = await tryFindMatch(
-      supabase,
+      serviceSupabase,
       user.id,
       profileData?.elo_rating ?? 1000,
       queueEntry.joined_at
@@ -390,92 +537,11 @@ async function tryFindMatch(supabase: any, userId: string, elo: number, joinedAt
     ? (Date.now() - new Date(joinedAt).getTime()) / 1000
     : 0;
   const eloRange = Math.min(500, 150 + Math.floor(waitSeconds / 10) * 50);
-
-  // Find opponent in range
-  const { data: opponents } = await supabase
-    .from("matchmaking_queue")
-    .select("*")
-    .neq("user_id", userId)
-    .gte("elo_rating", elo - eloRange)
-    .lte("elo_rating", elo + eloRange)
-    .order("joined_at", { ascending: true })
-    .limit(1);
-
-  if (!opponents || opponents.length === 0) return null;
-
-  const opponent = opponents[0];
-
-  // Get both players' squads (as Player objects via player_id lookup)
-  const [homeSquadRes, awaySquadRes, homeTacticsRes, awayTacticsRes] = await Promise.all([
-    supabase.from("squads").select("*").eq("user_id", userId).maybeSingle(),
-    supabase.from("squads").select("*").eq("user_id", opponent.user_id).maybeSingle(),
-    supabase.from("tactics").select("*").eq("user_id", userId).single(),
-    supabase.from("tactics").select("*").eq("user_id", opponent.user_id).single(),
-  ]);
-
-  if (
-    countSavedStarters(homeSquadRes.data) < RANKED_MIN_STARTERS ||
-    countSavedStarters(awaySquadRes.data) < RANKED_MIN_STARTERS
-  ) {
-    return null;
-  }
-
-  // We store squad row data; the simulate endpoint resolves player objects.
-  const homeSquadRows = homeSquadRes.data ? [homeSquadRes.data] : [];
-  const awaySquadRows = awaySquadRes.data ? [awaySquadRes.data] : [];
-
-  const homeTactics = homeTacticsRes.data
-    ? {
-        formation: homeTacticsRes.data.formation,
-        mentality: homeTacticsRes.data.mentality,
-        tempo: homeTacticsRes.data.tempo,
-        pressing: homeTacticsRes.data.pressing,
-        width: homeTacticsRes.data.width,
-        htIfLosingMentality: homeTacticsRes.data.ht_if_losing_mentality,
-        htIfWinningMentality: homeTacticsRes.data.ht_if_winning_mentality,
-      }
-    : { formation: "4-3-3", mentality: "Balanced", tempo: "Normal", pressing: "Medium", width: "Normal" };
-
-  const awayTactics = awayTacticsRes.data
-    ? {
-        formation: awayTacticsRes.data.formation,
-        mentality: awayTacticsRes.data.mentality,
-        tempo: awayTacticsRes.data.tempo,
-        pressing: awayTacticsRes.data.pressing,
-        width: awayTacticsRes.data.width,
-        htIfLosingMentality: awayTacticsRes.data.ht_if_losing_mentality,
-        htIfWinningMentality: awayTacticsRes.data.ht_if_winning_mentality,
-      }
-    : { formation: "4-3-3", mentality: "Balanced", tempo: "Normal", pressing: "Medium", width: "Normal" };
-
-  // Create match — store squad rows (simulate endpoint will resolve to Player objects)
-  const { data: match, error: matchError } = await supabase
-    .from("matches")
-    .insert({
-      home_user_id: userId,
-      away_user_id: opponent.user_id,
-      match_type: "ranked",
-      status: "accepted",
-      home_squad: homeSquadRows,
-      away_squad: awaySquadRows,
-      home_tactics: homeTactics,
-      away_tactics: awayTactics,
-      home_elo_before: elo,
-      away_elo_before: opponent.elo_rating,
-    })
-    .select()
-    .single();
-
-  if (matchError) return null;
-
-  // Remove both from queue
-  await supabase.from("matchmaking_queue").delete().eq("user_id", userId);
-  await supabase
-    .from("matchmaking_queue")
-    .delete()
-    .eq("user_id", opponent.user_id);
-
-  return match;
+  return allocateRankedMatch(createRankedMatchRepository(supabase), {
+    userId,
+    elo,
+    eloRange,
+  });
 }
 
 // Create a ghost opponent match using AI-generated squad
