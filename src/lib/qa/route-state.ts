@@ -1,4 +1,5 @@
 export type PlayQaFriendView = "create" | "join" | "pending";
+export type DraftQaState = "loading" | "reconnecting";
 type SearchParamReader = Pick<URLSearchParams, "get">;
 
 function isQaEnabled(): boolean {
@@ -37,4 +38,15 @@ export function getPlayQaInviteCode(searchParams: SearchParamReader): string | n
 
   const value = normalizeValue(searchParams.get("qaInviteCode"));
   return value ? value.toUpperCase() : null;
+}
+
+export function getDraftQaState(searchParams: SearchParamReader): DraftQaState | null {
+  if (!isQaEnabled()) return null;
+
+  const value = normalizeValue(searchParams.get("qaState"));
+  if (value === "loading" || value === "reconnecting") {
+    return value;
+  }
+
+  return null;
 }

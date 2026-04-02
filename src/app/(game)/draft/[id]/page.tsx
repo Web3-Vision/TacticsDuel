@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PLAYERS } from "@/lib/data/players";
+import { getDraftQaState } from "@/lib/qa/route-state";
 import { cn } from "@/lib/utils";
 import type { Player, Position } from "@/lib/types";
 
@@ -57,7 +58,9 @@ function ovrColor(ovr: number): string {
 
 export default function DraftPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const draftId = params?.id;
+  const qaState = getDraftQaState(searchParams);
 
   const [draft, setDraft] = useState<DraftSession | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -67,6 +70,7 @@ export default function DraftPage() {
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [timer, setTimer] = useState(PICK_TIMER_SECONDS);
+  const [realtimeStatus, setRealtimeStatus] = useState<string>("CONNECTING");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const supabase = useRef(createClient()).current;
@@ -100,6 +104,7 @@ export default function DraftPage() {
       }
 
       setDraft(data as DraftSession);
+      setError(null);
       setLoading(false);
     }
 
@@ -124,9 +129,12 @@ export default function DraftPage() {
         (payload) => {
           setDraft(payload.new as DraftSession);
           setSelectedPlayer(null);
+          setError(null);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setRealtimeStatus(status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -207,6 +215,9 @@ export default function DraftPage() {
     .sort((a, b) => b.overall - a.overall);
 
   const isComplete = draft?.status === "completed";
+  const isCancelled = draft?.status === "cancelled";
+  const hasLiveConnection = qaState === "reconnecting" ? false : realtimeStatus === "SUBSCRIBED";
+  const connectionStatusLabel = qaState === "reconnecting" ? "QA_RECONNECTING" : realtimeStatus;
   const currentPick = Math.min(draft?.current_pick ?? 1, TOTAL_PICKS);
   const progressPercent = Math.min(100, Math.max(0, (currentPick / TOTAL_PICKS) * 100));
   const picksRemaining = Math.max(0, TOTAL_PICKS - picks.length);
@@ -215,7 +226,7 @@ export default function DraftPage() {
 
   // ── Loading / error states ─────────────────────────────────────────────
 
-  if (loading) {
+  if (loading || qaState === "loading") {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 p-6">
         <div className="h-3 bg-border rounded-sm w-32 animate-pulse" />
@@ -273,6 +284,14 @@ export default function DraftPage() {
             Pick {currentPick}/
             {TOTAL_PICKS}
           </span>
+          <span
+            className={cn(
+              "font-mono text-[10px] uppercase tracking-wide",
+              hasLiveConnection ? "text-text-dim" : "text-danger",
+            )}
+          >
+            {hasLiveConnection ? "Realtime linked" : "Realtime reconnecting"}
+          </span>
         </div>
 
         <div className="mt-2">
@@ -306,6 +325,14 @@ export default function DraftPage() {
       {error && (
         <div className="px-4 py-2 bg-danger/10 border-b border-danger/20">
           <p className="font-mono text-xs text-danger">{error}</p>
+        </div>
+      )}
+
+      {!hasLiveConnection && !isComplete && !isCancelled && (
+        <div className="px-4 py-2 border-b border-danger/20 bg-danger/5">
+          <p className="font-mono text-[11px] text-text-mid">
+            Realtime channel status: <span className="text-danger">{connectionStatusLabel}</span>. Draft updates may lag while reconnecting.
+          </p>
         </div>
       )}
 
