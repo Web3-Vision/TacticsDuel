@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSquadStore } from "@/lib/stores/squad-store";
 import { createClient } from "@/lib/supabase/client";
@@ -9,6 +9,7 @@ import type { Profile } from "@/lib/types";
 import { Swords, Users, Bot, Copy, Share2, ArrowLeft, Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { evaluateRankedReadiness, RANKED_MIN_STARTERS } from "@/lib/multiplayer/competitive-flow";
+import { getPlayQaFriendView, getPlayQaInviteCode, getPlayQaInviteMode } from "@/lib/qa/route-state";
 import { countSavedStarters } from "@/lib/squad/persisted-squad";
 
 type FriendView = "menu" | "create" | "join" | "pending";
@@ -25,6 +26,7 @@ interface Invite {
 
 export default function PlayPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { filledCount } = useSquadStore();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [squadSaved, setSquadSaved] = useState(false);
@@ -43,6 +45,7 @@ export default function PlayPage() {
   const [friendLoading, setFriendLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showFriend, setShowFriend] = useState(false);
+  const qaPendingLoadedRef = useRef(false);
 
   // Check if squad and tactics are saved to DB, and load profile
   useEffect(() => {
@@ -75,6 +78,9 @@ export default function PlayPage() {
     squadLocked: Boolean(profile?.squad_locked),
   });
   const rankedReady = rankedReadiness.isReady;
+  const qaFriendView = getPlayQaFriendView(searchParams);
+  const qaInviteMode = getPlayQaInviteMode(searchParams);
+  const qaInviteCode = getPlayQaInviteCode(searchParams);
 
   // --- VS AI ---
   function handlePlayAI() {
@@ -228,6 +234,29 @@ export default function PlayPage() {
       setFriendLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!qaFriendView) return;
+
+    setShowFriend(true);
+    setFriendView(qaFriendView);
+    setFriendError("");
+
+    if (qaInviteMode) {
+      setInviteMode(qaInviteMode);
+    }
+
+    if (qaInviteCode) {
+      setJoinCode(qaInviteCode);
+    }
+  }, [qaFriendView, qaInviteMode, qaInviteCode]);
+
+  useEffect(() => {
+    if (qaFriendView !== "pending" || qaPendingLoadedRef.current) return;
+
+    qaPendingLoadedRef.current = true;
+    loadPendingInvites();
+  }, [qaFriendView, loadPendingInvites]);
 
   // --- Reset friend state when closing ---
   function resetFriendState() {
