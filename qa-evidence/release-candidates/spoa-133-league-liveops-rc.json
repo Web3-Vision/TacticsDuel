@@ -1,0 +1,23 @@
+{
+  "branch": "spoa-133-league-liveops-rc",
+  "commit": "438002226c4a69b81fc95de9457aa5332700c37a",
+  "issues": [
+    {
+      "id": "SPOA-129",
+      "url": "/SPOA/issues/SPOA-129"
+    },
+    {
+      "id": "SPOA-131",
+      "url": "/SPOA/issues/SPOA-131"
+    },
+    {
+      "id": "SPOA-133",
+      "url": "/SPOA/issues/SPOA-133"
+    }
+  ],
+  "validation": [
+    "npm run typecheck",
+    "npx vitest run src/lib/league/progression.test.ts src/lib/live-ops/contracts.test.ts",
+    "npm run qa:release-candidate -- --manifest qa-evidence/release-candidates/spoa-133-league-liveops-rc.json"
+  ]
+}
