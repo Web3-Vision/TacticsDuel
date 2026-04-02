@@ -9,10 +9,15 @@ import { KeyRound, TriangleAlert } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
+  const [passwordEmail, setPasswordEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const [error, setError] = useState("");
   const supabase = createClient();
   const router = useRouter();
+  const qaPasswordLoginEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_QA_PASSWORD_LOGIN === "true";
 
   async function handleMagicLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -61,6 +66,30 @@ export default function LoginPage() {
     }
   }
 
+  async function handlePasswordLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordLoading(true);
+    setError("");
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: passwordEmail.trim(),
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        setPasswordLoading(false);
+        return;
+      }
+
+      router.push("/home");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Password login failed");
+      setPasswordLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-dvh app-shell-bg px-4 py-8 md:py-12">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-[460px] flex-col justify-center">
@@ -91,13 +120,55 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || passwordLoading}
               className="mt-1 inline-flex min-h-[46px] items-center justify-center gap-2 rounded-md bg-accent px-4 font-mono text-xs font-semibold uppercase tracking-[0.15em] text-black transition-colors duration-150 hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-60"
             >
               <KeyRound size={14} strokeWidth={1.8} />
               {loading ? "Authenticating" : "Continue With OTP"}
             </button>
           </form>
+
+          {qaPasswordLoginEnabled && (
+            <form onSubmit={handlePasswordLogin} className="mt-4 flex flex-col gap-3 border-t border-border-light/60 pt-4">
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-dim">
+                Local QA Password Login
+              </p>
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-dim">
+                  QA Email
+                </span>
+                <input
+                  type="email"
+                  value={passwordEmail}
+                  onChange={(e) => setPasswordEmail(e.target.value)}
+                  placeholder="qa.spoa73@example.com"
+                  required
+                  className="min-h-[46px] rounded-md border border-border bg-surface px-3 font-mono text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-dim">
+                  QA Password
+                </span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter fixture password"
+                  required
+                  className="min-h-[46px] rounded-md border border-border bg-surface px-3 font-mono text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={loading || passwordLoading}
+                className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-md border border-accent/55 bg-accent/12 px-4 font-mono text-xs font-semibold uppercase tracking-[0.15em] text-accent transition-colors duration-150 hover:bg-accent/18 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <KeyRound size={14} strokeWidth={1.8} />
+                {passwordLoading ? "Signing In" : "Sign In With Password"}
+              </button>
+            </form>
+          )}
 
           {error && (
             <div className="mt-3 rounded-md border border-danger/40 bg-danger/10 px-3 py-2">

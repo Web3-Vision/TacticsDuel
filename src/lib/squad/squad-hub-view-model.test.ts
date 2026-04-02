@@ -25,6 +25,9 @@ describe("squad hub view-model", () => {
     expect(model.listedCount).toBe(2);
     expect(model.captain?.id).toBe("debruyne_01");
     expect(model.isReady).toBe(false);
+    expect(model.chemistrySummary.score).toBeGreaterThan(0);
+    expect(model.chemistryByPlayerId["debruyne_01"]?.score).toBeGreaterThanOrEqual(0);
+    expect(model.lines.every((line) => typeof line.chemistryAvg === "number")).toBe(true);
   });
 
   it("marks lineup as ready when all starter slots are filled", () => {
@@ -50,5 +53,6 @@ describe("squad hub view-model", () => {
 
     expect(model.isReady).toBe(true);
     expect(model.startersFilled).toBe(11);
+    expect(model.chemistrySummary.maxScore).toBe(110);
   });
 });

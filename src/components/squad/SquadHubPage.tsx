@@ -45,6 +45,13 @@ function cloneSnapshot(): SquadSnapshot {
   };
 }
 
+function chemistryChipClass(label: "isolated" | "linked" | "strong" | "elite") {
+  if (label === "elite") return "text-accent border-accent/60 bg-accent/10";
+  if (label === "strong") return "text-home border-home/50 bg-home/10";
+  if (label === "linked") return "text-gold border-gold/50 bg-gold/10";
+  return "text-text-dim border-border bg-surface-alt";
+}
+
 export default function SquadHubPage() {
   const {
     formationId,
@@ -70,8 +77,6 @@ export default function SquadHubPage() {
   const [mutation, setMutation] = useState<LineupMutationState>(idleLineupMutationState());
   const [listedPlayerIds, setListedPlayerIds] = useState<Set<string>>(new Set());
   const [marketError, setMarketError] = useState<string>("");
-
-  const formation = getFormation(formationId);
 
   const viewModel = useMemo(
     () =>
@@ -321,7 +326,7 @@ export default function SquadHubPage() {
         </div>
       ) : (
         <>
-          <div className="px-4 py-2 border-b border-border bg-surface grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="px-4 py-3 border-b border-border bg-surface grid grid-cols-2 lg:grid-cols-5 gap-2">
             <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
               <p className="font-mono text-[9px] text-text-dim uppercase">Starters</p>
               <p className="font-mono text-xs text-text tabular-nums mt-0.5">{viewModel.startersFilled}/11</p>
@@ -331,14 +336,52 @@ export default function SquadHubPage() {
               <p className="font-mono text-xs text-text tabular-nums mt-0.5">{viewModel.benchFilled}/10</p>
             </div>
             <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
-              <p className="font-mono text-[9px] text-text-dim uppercase">On Market</p>
-              <p className="font-mono text-xs text-text tabular-nums mt-0.5">{viewModel.listedCount}</p>
+              <p className="font-mono text-[9px] text-text-dim uppercase">Chemistry</p>
+              <p
+                className={cn(
+                  "font-mono text-xs tabular-nums mt-0.5 uppercase",
+                  viewModel.chemistrySummary.label === "hot"
+                    ? "text-accent"
+                    : viewModel.chemistrySummary.label === "steady"
+                      ? "text-gold"
+                      : "text-text-mid",
+                )}
+              >
+                {viewModel.chemistrySummary.score}%
+              </p>
             </div>
             <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2">
+              <p className="font-mono text-[9px] text-text-dim uppercase">Linked</p>
+              <p className="font-mono text-xs text-text tabular-nums mt-0.5">{viewModel.chemistrySummary.linkedPlayers}/11</p>
+            </div>
+            <div className="bg-bg border border-border rounded-[4px] px-2.5 py-2 col-span-2 lg:col-span-1">
               <p className="font-mono text-[9px] text-text-dim uppercase">Readiness</p>
-              <p className={cn("font-mono text-xs tabular-nums mt-0.5", viewModel.isReady ? "text-accent" : "text-text")}>
-                {viewModel.isReady ? "Ready" : "Incomplete"}
-              </p>
+              <p className={cn("font-mono text-xs tabular-nums mt-0.5", viewModel.isReady ? "text-accent" : "text-text")}>{viewModel.isReady ? "Ready" : "Incomplete"}</p>
+            </div>
+          </div>
+
+          <div className="px-4 py-2 border-b border-border bg-surface">
+            <div className="rounded-md border border-accent/45 bg-[linear-gradient(120deg,rgba(0,255,65,0.12),rgba(0,255,65,0.02))] px-3 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-accent">Transfer Window</p>
+                <p className="font-mono text-xs text-text-mid mt-1">
+                  Fill weak chemistry links and replace listed players in one tap.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/club/market?view=squad-needs"
+                  className="h-8 px-3 rounded-[4px] border border-accent text-accent font-mono text-[10px] uppercase tracking-wide flex items-center hover:bg-accent/10"
+                >
+                  Find Fits
+                </Link>
+                <Link
+                  href="/club/market"
+                  className="h-8 px-3 rounded-[4px] bg-accent text-black font-mono text-[10px] uppercase tracking-wide flex items-center hover:bg-accent-dim"
+                >
+                  Open Market
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -363,56 +406,95 @@ export default function SquadHubPage() {
 
           <div className="px-4 py-3">
             <PitchView />
-            <p className="mt-2 font-mono text-[10px] text-text-dim">
-              Tap a starter on the pitch, then tap a bench player to swap instantly.
-            </p>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+              <p className="font-mono text-[10px] text-text-dim">Tap a starter to inspect details.</p>
+              <p className="font-mono text-[10px] text-text-dim">Pick a bench player to swap instantly.</p>
+              <p className="font-mono text-[10px] text-text-dim">Use chemistry tags to optimize links.</p>
+            </div>
           </div>
 
           <div className="px-4 pb-2">
             <div className="bg-surface border border-border rounded-md p-3">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <span className="font-mono text-[10px] text-text-dim uppercase tracking-widest">Starter lines</span>
                 {viewModel.captain && (
-                  <span className="font-mono text-[10px] text-accent uppercase tracking-wide">
-                    C: {viewModel.captain.name}
-                  </span>
+                  <span className="font-mono text-[10px] text-accent uppercase tracking-wide">C: {viewModel.captain.name}</span>
                 )}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 {viewModel.lines.map((line) => (
                   <div key={line.key}>
-                    <p className="font-mono text-[10px] text-text-dim uppercase mb-1">{line.label}</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-mono text-[10px] text-text-dim uppercase">{line.label}</p>
+                      <span
+                        className={cn(
+                          "font-mono text-[10px] uppercase",
+                          line.chemistryAvg >= 7 ? "text-accent" : line.chemistryAvg >= 4 ? "text-gold" : "text-text-mid",
+                        )}
+                      >
+                        Chem {line.chemistryAvg}
+                      </span>
+                    </div>
                     {line.players.length === 0 ? (
                       <p className="font-mono text-[10px] text-text-dim">No players assigned.</p>
                     ) : (
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-1.5">
                         {line.players.map((player) => {
                           const slotIndex = slots.findIndex((slotPlayer) => slotPlayer?.id === player.id);
                           const isSelected = slotIndex === activeSlotIndex;
+                          const chemistry = viewModel.chemistryByPlayerId[player.id];
                           return (
                             <div
                               key={player.id}
                               className={cn(
-                                "h-9 px-2.5 rounded-[4px] border flex items-center gap-2",
-                                isSelected ? "border-accent bg-accent/10" : "border-border",
+                                "rounded-[5px] border p-2.5",
+                                isSelected ? "border-accent bg-accent/10" : "border-border bg-bg",
                               )}
                             >
-                              <button
-                                onClick={() => openStarterDetail(slotIndex)}
-                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                              >
-                                <span className="font-mono text-[10px] text-text-dim uppercase w-7">{player.position}</span>
-                                <span className="font-mono text-xs text-text truncate">{player.name}</span>
+                              <div className="flex items-start gap-2">
+                                <button
+                                  onClick={() => openStarterDetail(slotIndex)}
+                                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                                >
+                                  <div className="w-8 shrink-0">
+                                    <span className="font-mono text-sm text-accent tabular-nums">{player.overall}</span>
+                                    <span className="block font-mono text-[9px] text-text-dim uppercase">{player.position}</span>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-mono text-xs text-text truncate">{player.name}</p>
+                                    <p className="font-mono text-[10px] text-text-dim truncate">{player.club}</p>
+                                  </div>
+                                </button>
+                                <Link
+                                  href={`/club/market?playerId=${player.id}`}
+                                  className="h-7 px-2.5 rounded-[3px] border border-accent/70 text-accent font-mono text-[10px] uppercase flex items-center hover:bg-accent/10"
+                                >
+                                  Replace
+                                </Link>
+                              </div>
+
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={cn(
+                                    "h-5 px-1.5 rounded-[3px] border font-mono text-[9px] uppercase tracking-wide inline-flex items-center",
+                                    chemistryChipClass(chemistry?.label ?? "isolated"),
+                                  )}
+                                >
+                                  {chemistry?.label ?? "isolated"}
+                                </span>
+                                {chemistry && chemistry.clubLinks > 0 && (
+                                  <span className="font-mono text-[9px] text-text-mid uppercase">Club x{chemistry.clubLinks}</span>
+                                )}
+                                {chemistry && chemistry.nationLinks > 0 && (
+                                  <span className="font-mono text-[9px] text-text-mid uppercase">Nation x{chemistry.nationLinks}</span>
+                                )}
                                 {listedPlayerIds.has(player.id) && (
                                   <span className="font-mono text-[9px] text-gold uppercase">Listed</span>
                                 )}
-                              </button>
-                              <Link
-                                href={`/club/market?playerId=${player.id}`}
-                                className="font-mono text-[10px] text-accent uppercase"
-                              >
-                                Market
-                              </Link>
+                                <span className="font-mono text-[9px] text-text-mid tabular-nums ml-auto">
+                                  {formatPrice(player.marketValue)}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -457,28 +539,36 @@ export default function SquadHubPage() {
               </p>
             ) : (
               <div className="flex flex-col gap-1">
-                {benchPlayers.map(({ player, index }) => (
-                  <div key={player.id} className="flex items-center gap-2 h-9 px-2 rounded-[3px] border border-border">
-                    <button
-                      onClick={() => handleSwapWithStarter(index)}
-                      className="flex items-center gap-2 flex-1 text-left min-w-0"
-                    >
-                      <span className="font-mono text-[10px] text-text-dim uppercase w-6">{player.position}</span>
-                      <span className="font-mono text-xs text-text truncate">{player.name}</span>
-                      {listedPlayerIds.has(player.id) && (
-                        <span className="font-mono text-[9px] text-gold uppercase">Listed</span>
-                      )}
-                    </button>
-                    <span className="font-mono text-xs text-accent tabular-nums w-6 text-right">{player.overall}</span>
-                    <span className="font-mono text-[10px] text-gold tabular-nums">{formatPrice(player.marketValue)}</span>
-                    <Link
-                      href={`/club/market?playerId=${player.id}`}
-                      className="font-mono text-[10px] text-accent uppercase"
-                    >
-                      Market
-                    </Link>
-                  </div>
-                ))}
+                {benchPlayers.map(({ player, index }) => {
+                  const chemistry = viewModel.chemistryByPlayerId[player.id];
+                  return (
+                    <div key={player.id} className="flex items-center gap-2 min-h-9 px-2 rounded-[3px] border border-border">
+                      <button
+                        onClick={() => handleSwapWithStarter(index)}
+                        className="flex items-center gap-2 flex-1 text-left min-w-0 py-1.5"
+                      >
+                        <span className="font-mono text-[10px] text-text-dim uppercase w-6">{player.position}</span>
+                        <span className="font-mono text-xs text-text truncate">{player.name}</span>
+                        {chemistry && (
+                          <span className={cn("font-mono text-[9px] uppercase", chemistry.label === "elite" ? "text-accent" : chemistry.label === "strong" ? "text-gold" : "text-text-dim")}>
+                            {chemistry.label}
+                          </span>
+                        )}
+                        {listedPlayerIds.has(player.id) && (
+                          <span className="font-mono text-[9px] text-gold uppercase">Listed</span>
+                        )}
+                      </button>
+                      <span className="font-mono text-xs text-accent tabular-nums w-6 text-right">{player.overall}</span>
+                      <span className="font-mono text-[10px] text-gold tabular-nums">{formatPrice(player.marketValue)}</span>
+                      <Link
+                        href={`/club/market?playerId=${player.id}`}
+                        className="font-mono text-[10px] text-accent uppercase"
+                      >
+                        Market
+                      </Link>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

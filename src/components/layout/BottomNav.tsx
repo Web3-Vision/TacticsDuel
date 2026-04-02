@@ -9,8 +9,8 @@ const tabs = [
   { href: "/home", label: "Home", icon: LayoutGrid },
   { href: "/play", label: "Play", icon: PlayCircle },
   { href: "/club/squad", label: "Squad", icon: Users },
+  { href: "/divisions", label: "League", icon: Trophy },
   { href: "/club/market", label: "Market", icon: ShoppingBag },
-  { href: "/club/team-hub", label: "Hub", icon: Trophy },
 ];
 
 export default function BottomNav() {
@@ -31,13 +31,13 @@ export default function BottomNav() {
                 pathname.startsWith("/matchday");
             } else if (tab.href === "/club/squad") {
               isActive = pathname === "/club/squad" || pathname === "/club/tactics";
+            } else if (tab.href === "/divisions") {
+              isActive =
+                pathname === "/divisions" ||
+                pathname === "/club/leaderboard" ||
+                pathname.startsWith("/missions");
             } else if (tab.href === "/club/market") {
               isActive = pathname === "/club/market" || pathname === "/club/players";
-            } else if (tab.href === "/club/team-hub") {
-              isActive =
-                pathname === "/club/team-hub" ||
-                pathname === "/club" ||
-                pathname === "/club/leaderboard";
             }
 
             const Icon = tab.icon;
