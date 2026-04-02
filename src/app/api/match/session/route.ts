@@ -17,6 +17,7 @@ const actionErrors: Record<string, number> = {
   ROOM_NOT_FOUND: 404,
   ROOM_FULL: 409,
   NOT_A_PARTICIPANT: 403,
+  PARTICIPANT_DISCONNECTED: 409,
   INVALID_TURN: 409,
   NOT_YOUR_TURN: 409,
   SESSION_NOT_ACTIVE: 409,
@@ -56,6 +57,39 @@ function formatSessionResponse(session: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatSessionStateHint(session: {
+  id: string;
+  status: "waiting" | "active" | "completed";
+  updatedAt: string;
+  turnNumber: number;
+  activeSide: "home" | "away";
+  phase: "lobby" | "first_half" | "halftime" | "second_half" | "fulltime";
+  participants: Array<{ userId: string; side: "home" | "away"; connected: boolean }>;
+}, currentUserId: string) {
+  return {
+    id: session.id,
+    status: session.status,
+    updatedAt: session.updatedAt,
+    turnNumber: session.turnNumber,
+    activeSide: session.activeSide,
+    phase: session.phase,
+    you: session.participants.find((participant) => participant.userId === currentUserId) ?? null,
+  };
+}
+
+function getSubmitTurnRecoveryHint(sessionId: string, currentUserId: string | null) {
+  if (!sessionId || !currentUserId) {
+    return null;
+  }
+
+  try {
+    const session = getSessionForUser(sessionId, currentUserId);
+    return formatSessionStateHint(session, currentUserId);
+  } catch {
+    return null;
+  }
 }
 
 async function getAuthenticatedUserId() {
@@ -200,25 +234,45 @@ export async function POST(request: Request) {
         context.sessionId = observedSessionId;
       }
 
-      if (observedAction === "submit_turn" && error.code === "INVALID_TURN") {
+      const shouldIncludeRecoveryHint =
+        observedAction === "submit_turn" &&
+        (error.code === "INVALID_TURN" ||
+          error.code === "NOT_YOUR_TURN" ||
+          error.code === "PARTICIPANT_DISCONNECTED" ||
+          error.code === "SESSION_NOT_ACTIVE");
+
+      const sessionState = shouldIncludeRecoveryHint
+        ? getSubmitTurnRecoveryHint(observedSessionId, userId)
+        : null;
+
+      if (shouldIncludeRecoveryHint) {
         logDomainEvent({
           service: "match.session",
-          event: "turn_desync_detected",
+          event: "turn_submission_rejected",
           traceId,
           context: {
             action: observedAction,
             sessionId: observedSessionId,
             userId,
             reason: error.code,
+            authoritativeTurnNumber: sessionState?.turnNumber,
+            authoritativePhase: sessionState?.phase,
+            authoritativeActiveSide: sessionState?.activeSide,
           },
         });
       }
 
+      const responseBody: Record<string, unknown> = {
+        error: error.message,
+        code: error.code,
+      };
+
+      if (sessionState) {
+        responseBody.sessionState = sessionState;
+      }
+
       return respond(
-        {
-          error: error.message,
-          code: error.code,
-        },
+        responseBody,
         actionErrors[error.code] ?? 400,
         context,
         error.code

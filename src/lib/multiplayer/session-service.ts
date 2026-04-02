@@ -45,6 +45,7 @@ export type SessionErrorCode =
   | "ROOM_NOT_FOUND"
   | "ROOM_FULL"
   | "NOT_A_PARTICIPANT"
+  | "PARTICIPANT_DISCONNECTED"
   | "INVALID_TURN"
   | "NOT_YOUR_TURN"
   | "SESSION_NOT_ACTIVE"
@@ -417,6 +418,12 @@ function ensureParticipant(session: MatchSession, userId: string): SessionPartic
   return participant;
 }
 
+function ensureConnectedParticipant(participant: SessionParticipant) {
+  if (!participant.connected) {
+    throw new SessionError("PARTICIPANT_DISCONNECTED", "Reconnect before submitting commands");
+  }
+}
+
 function roomCodeForNewSession(): string {
   const registry = getRegistry();
   let attempts = 0;
@@ -543,6 +550,7 @@ export function submitTurn(
 ): MatchSession {
   const session = getById(sessionId);
   const participant = ensureParticipant(session, userId);
+  ensureConnectedParticipant(participant);
 
   if (session.status !== "active") {
     throw new SessionError("SESSION_NOT_ACTIVE", "Session is not active");

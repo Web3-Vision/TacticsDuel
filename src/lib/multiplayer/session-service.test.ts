@@ -91,6 +91,36 @@ describe("multiplayer session service smoke tests", () => {
     expect(awayAfterReconnect?.connected).toBe(true);
   });
 
+  it("rejects turn submission from disconnected participants until they reconnect", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+
+    const created = createRoom(homeUserId, "match-4");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    disconnect(activeSession.id, homeUserId);
+
+    expectSessionError(
+      () =>
+        submitTurn(activeSession.id, homeUserId, 1, {
+          action: "play_style_change",
+          playStyle: "counter",
+        }),
+      "PARTICIPANT_DISCONNECTED",
+    );
+
+    const reconnected = reconnect(activeSession.id, homeUserId);
+    expect(reconnected.participants.find((participant) => participant.userId === homeUserId)?.connected).toBe(true);
+
+    const afterReconnectTurn = submitTurn(activeSession.id, homeUserId, 1, {
+      action: "play_style_change",
+      playStyle: "counter",
+    });
+
+    expect(afterReconnectTurn.turnNumber).toBe(2);
+    expect(afterReconnectTurn.activeSide).toBe("away");
+  });
+
   it("persists deterministic command hashes for identical command payloads", () => {
     const homeUserId = `home-${crypto.randomUUID()}`;
     const awayUserId = `away-${crypto.randomUUID()}`;
