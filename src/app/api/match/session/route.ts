@@ -1,42 +1,24 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
+import { createClient } from "../../../../lib/supabase/server";
+import { createTraceId, logDomainEvent, recordApiResult } from "../../../../lib/observability/realtime";
+import { formatSessionStateHint, SessionError, type MatchSession } from "../../../../lib/multiplayer/session-domain";
 import {
-  SessionError,
-  closeSession,
-  createRoom,
-  disconnect,
-  getSessionForUser,
-  joinRoom,
-  reconnect,
-  submitTurn,
-} from "@/lib/multiplayer/session-service";
+  getMultiplayerSessionStore,
+} from "../../../../lib/multiplayer/session-store";
 
 const actionErrors: Record<string, number> = {
   SESSION_NOT_FOUND: 404,
   ROOM_NOT_FOUND: 404,
   ROOM_FULL: 409,
   NOT_A_PARTICIPANT: 403,
+  PARTICIPANT_DISCONNECTED: 409,
   INVALID_TURN: 409,
   NOT_YOUR_TURN: 409,
   SESSION_NOT_ACTIVE: 409,
   INVALID_ACTION: 400,
 };
 
-function formatSessionResponse(session: {
-  id: string;
-  roomCode: string;
-  matchId: string | null;
-  status: "waiting" | "active" | "completed";
-  createdByUserId: string;
-  createdAt: string;
-  updatedAt: string;
-  turnNumber: number;
-  activeSide: "home" | "away";
-  phase: "lobby" | "first_half" | "halftime" | "second_half" | "fulltime";
-  participants: Array<{ userId: string; side: "home" | "away"; connected: boolean; joinedAt: string; lastSeenAt: string }>;
-  turns: Array<{ side: "home" | "away"; turnNumber: number; payload: Record<string, unknown>; submittedAt: string }>;
-}, currentUserId: string) {
+function formatSessionResponse(session: MatchSession, currentUserId: string) {
   return {
     id: session.id,
     roomCode: session.roomCode,
@@ -56,6 +38,20 @@ function formatSessionResponse(session: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function getSubmitTurnRecoveryHint(sessionId: string, currentUserId: string | null) {
+  if (!sessionId || !currentUserId) {
+    return null;
+  }
+
+  try {
+    const store = await getMultiplayerSessionStore();
+    const session = await store.getSessionForUser(sessionId, currentUserId);
+    return formatSessionStateHint(session, currentUserId);
+  } catch {
+    return null;
+  }
 }
 
 async function getAuthenticatedUserId() {
@@ -94,6 +90,7 @@ export async function POST(request: Request) {
   let observedSessionId = "";
 
   try {
+    const store = await getMultiplayerSessionStore();
     const body = await request.json();
     const action = typeof body?.action === "string" ? body.action : "";
     const contextAction = action || "unknown";
@@ -103,7 +100,7 @@ export async function POST(request: Request) {
 
     if (action === "create_room") {
       const matchId = typeof body?.matchId === "string" ? body.matchId : null;
-      const session = createRoom(userId, matchId);
+      const session = await store.createRoom(userId, matchId);
       return respond({ session: formatSessionResponse(session, userId) }, 201, {
         action: contextAction,
         sessionId: session.id,
@@ -117,7 +114,7 @@ export async function POST(request: Request) {
         return respond({ error: "Missing roomCode" }, 400, { action: contextAction });
       }
 
-      const session = joinRoom(userId, roomCode);
+      const session = await store.joinRoom(userId, roomCode);
       return respond({ session: formatSessionResponse(session, userId) }, 200, {
         action: contextAction,
         sessionId: session.id,
@@ -131,7 +128,7 @@ export async function POST(request: Request) {
         return respond({ error: "Missing sessionId" }, 400, { action: contextAction });
       }
 
-      const session = reconnect(sessionId, userId);
+      const session = await store.reconnect(sessionId, userId);
       logDomainEvent({
         service: "match.session",
         event: "participant_reconnected",
@@ -147,7 +144,7 @@ export async function POST(request: Request) {
         return respond({ error: "Missing sessionId" }, 400, { action: contextAction });
       }
 
-      const session = disconnect(sessionId, userId);
+      const session = await store.disconnect(sessionId, userId);
       logDomainEvent({
         service: "match.session",
         event: "participant_disconnected",
@@ -174,7 +171,7 @@ export async function POST(request: Request) {
         return respond({ error: "Missing payload" }, 400, { action: contextAction, sessionId });
       }
 
-      const session = submitTurn(sessionId, userId, turnNumber, payload);
+      const session = await store.submitTurn(sessionId, userId, turnNumber, payload);
       return respond({ session: formatSessionResponse(session, userId) }, 200, {
         action: contextAction,
         sessionId,
@@ -188,7 +185,7 @@ export async function POST(request: Request) {
         return respond({ error: "Missing sessionId" }, 400, { action: contextAction });
       }
 
-      const session = closeSession(sessionId, userId);
+      const session = await store.closeSession(sessionId, userId);
       return respond({ session: formatSessionResponse(session, userId) }, 200, { action: contextAction, sessionId });
     }
 
@@ -200,25 +197,45 @@ export async function POST(request: Request) {
         context.sessionId = observedSessionId;
       }
 
-      if (observedAction === "submit_turn" && error.code === "INVALID_TURN") {
+      const shouldIncludeRecoveryHint =
+        observedAction === "submit_turn" &&
+        (error.code === "INVALID_TURN" ||
+          error.code === "NOT_YOUR_TURN" ||
+          error.code === "PARTICIPANT_DISCONNECTED" ||
+          error.code === "SESSION_NOT_ACTIVE");
+
+      const sessionState = shouldIncludeRecoveryHint
+        ? await getSubmitTurnRecoveryHint(observedSessionId, userId)
+        : null;
+
+      if (shouldIncludeRecoveryHint) {
         logDomainEvent({
           service: "match.session",
-          event: "turn_desync_detected",
+          event: "turn_submission_rejected",
           traceId,
           context: {
             action: observedAction,
             sessionId: observedSessionId,
             userId,
             reason: error.code,
+            authoritativeTurnNumber: sessionState?.turnNumber,
+            authoritativePhase: sessionState?.phase,
+            authoritativeActiveSide: sessionState?.activeSide,
           },
         });
       }
 
+      const responseBody: Record<string, unknown> = {
+        error: error.message,
+        code: error.code,
+      };
+
+      if (sessionState) {
+        responseBody.sessionState = sessionState;
+      }
+
       return respond(
-        {
-          error: error.message,
-          code: error.code,
-        },
+        responseBody,
         actionErrors[error.code] ?? 400,
         context,
         error.code
@@ -261,7 +278,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const session = getSessionForUser(sessionId, userId);
+    const store = await getMultiplayerSessionStore();
+    const session = await store.getSessionForUser(sessionId, userId);
     return respond({ session: formatSessionResponse(session, userId) }, 200, { sessionId });
   } catch (error) {
     if (error instanceof SessionError) {
