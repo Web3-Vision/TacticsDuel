@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { DIVISIONS, cn } from "@/lib/utils";
+import { fetchLeagueLadder } from "@/lib/league/server";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -8,11 +9,7 @@ export default async function LeaderboardPage() {
   } = await supabase.auth.getUser();
 
   // Get top players by ELO
-  const { data: leaderboard } = await supabase
-    .from("profiles")
-    .select("id, username, club_name, division, elo_rating, wins, draws, losses")
-    .order("elo_rating", { ascending: false })
-    .limit(50);
+  const { rows: leaderboard } = await fetchLeagueLadder(supabase, { limit: 50 });
 
   let myProfile = null;
   if (user) {

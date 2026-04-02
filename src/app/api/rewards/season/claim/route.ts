@@ -12,19 +12,31 @@ type ClaimRewardRpcRow = {
   error_message: string | null;
 };
 
+function mapClaimErrorToStatus(errorCode: string): number {
+  switch (errorCode) {
+    case "unauthorized":
+      return 401;
+    case "reward_not_found":
+      return 404;
+    default:
+      return 500;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) {
+
+    if (user == null) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    const { rewardId } = body;
-    if (typeof rewardId !== "string" || rewardId.length === 0) {
+    const rewardId = typeof body?.rewardId === "string" ? body.rewardId : "";
+    if (!rewardId) {
       return NextResponse.json({ error: "Missing rewardId" }, { status: 400 });
     }
 
@@ -41,14 +53,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to claim season reward" }, { status: 500 });
     }
 
-    if (row.error_code === "reward_not_found") {
-      return NextResponse.json({ error: "Reward not found" }, { status: 404 });
-    }
-
     if (row.error_code) {
       return NextResponse.json(
         { error: row.error_message ?? "Failed to claim season reward" },
-        { status: 500 },
+        { status: mapClaimErrorToStatus(row.error_code) },
       );
     }
 
@@ -63,9 +71,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error("Season reward claim POST error", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

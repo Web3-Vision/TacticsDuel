@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { pickDailyMissions, pickWeeklyMissions } from "@/lib/engine/missions";
+import { getMissionInsertMetadata } from "@/lib/live-ops/contracts";
 
 // GET: Fetch active missions, generate if needed
 export async function GET() {
@@ -38,7 +39,8 @@ export async function GET() {
       const dailyExpiry = new Date(todayStart);
       dailyExpiry.setDate(dailyExpiry.getDate() + 1);
 
-      for (const m of newDailies) {
+      for (const [index, m] of newDailies.entries()) {
+        const metadata = getMissionInsertMetadata("daily", m.key, index);
         await supabase.from("missions").insert({
           user_id: user.id,
           mission_type: "daily",
@@ -48,6 +50,7 @@ export async function GET() {
           progress: 0,
           reward_coins: m.rewardCoins,
           expires_at: dailyExpiry.toISOString(),
+          ...metadata,
         });
       }
     }
@@ -58,7 +61,8 @@ export async function GET() {
       const weeklyExpiry = new Date(weekStart);
       weeklyExpiry.setDate(weeklyExpiry.getDate() + 7);
 
-      for (const m of newWeeklies) {
+      for (const [index, m] of newWeeklies.entries()) {
+        const metadata = getMissionInsertMetadata("weekly", m.key, index);
         await supabase.from("missions").insert({
           user_id: user.id,
           mission_type: "weekly",
@@ -68,6 +72,7 @@ export async function GET() {
           progress: 0,
           reward_coins: m.rewardCoins,
           expires_at: weeklyExpiry.toISOString(),
+          ...metadata,
         });
       }
     }
@@ -79,7 +84,10 @@ export async function GET() {
       .eq("user_id", user.id)
       .eq("claimed", false)
       .gte("expires_at", now.toISOString())
+      .order("is_featured", { ascending: false })
+      .order("priority_weight", { ascending: false })
       .order("mission_type", { ascending: true })
+      .order("expires_at", { ascending: true })
       .order("created_at", { ascending: false });
 
     return NextResponse.json({ missions: allMissions ?? [] });
@@ -113,9 +121,6 @@ export async function POST(request: Request) {
     await supabase.from("missions").update({ claimed: true }).eq("id", missionId);
 
     // Award coins
-    await supabase.rpc("increment_coins", { user_id_input: user.id, amount: mission.reward_coins });
-
-    // Fallback if RPC doesn't exist: direct update
     const { data: profile } = await supabase
       .from("profiles")
       .select("coins")

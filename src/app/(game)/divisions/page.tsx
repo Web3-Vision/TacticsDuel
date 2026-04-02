@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bell, CalendarClock, ChevronRight, Clock3, Gift, ShieldCheck, Swords, Trophy } from "lucide-react";
+import { fetchLeagueLadder } from "@/lib/league/server";
+import { buildLiveOpsEventCards, getCadenceSnapshot, sortMissionRows, type FeedContractRow, type LiveOpsEventCard, type MissionContractRow } from "@/lib/live-ops/contracts";
 import { createClient } from "@/lib/supabase/server";
 import { cn, DIVISIONS } from "@/lib/utils";
 
@@ -16,16 +18,7 @@ interface LeaderboardRow {
   losses: number;
 }
 
-interface MissionRow {
-  id: string;
-  mission_type: string;
-  description: string;
-  target: number;
-  progress: number;
-  reward_coins: number;
-  expires_at: string | null;
-  claimed: boolean;
-}
+type MissionRow = MissionContractRow;
 
 interface RewardRow {
   id: string;
@@ -36,28 +29,7 @@ interface RewardRow {
   created_at: string;
 }
 
-interface FeedRow {
-  id: string;
-  title: string;
-  body?: string | null;
-  summary?: string | null;
-  created_at: string;
-}
-
-function getDailyReset(now: Date): Date {
-  const reset = new Date(now);
-  reset.setHours(24, 0, 0, 0);
-  return reset;
-}
-
-function getWeeklyReset(now: Date): Date {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const day = start.getDay();
-  const daysUntilSunday = (7 - day) % 7;
-  start.setDate(start.getDate() + (daysUntilSunday === 0 ? 7 : daysUntilSunday));
-  return start;
-}
+type FeedRow = FeedContractRow;
 
 function formatCountdown(target: Date, now: Date): string {
   const diffMs = Math.max(0, target.getTime() - now.getTime());
@@ -109,16 +81,6 @@ function formatRecord(row: LeaderboardRow): string {
   return `${row.wins}-${row.draws}-${row.losses}`;
 }
 
-function sortMissions(missions: MissionRow[]): MissionRow[] {
-  return [...missions].sort((a, b) => {
-    const typeOrder = a.mission_type.localeCompare(b.mission_type);
-    if (typeOrder !== 0) return typeOrder;
-    const aProgress = a.target === 0 ? 0 : a.progress / a.target;
-    const bProgress = b.target === 0 ? 0 : b.progress / b.target;
-    return bProgress - aProgress;
-  });
-}
-
 export default async function DivisionsPage() {
   const supabase = await createClient();
   const {
@@ -132,21 +94,17 @@ export default async function DivisionsPage() {
   const now = new Date();
   const [
     { data: profile },
-    { data: leaderboard },
+    ladderResult,
     { data: missions },
     { data: rewards },
     { data: inbox },
     { data: news },
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).single(),
-    supabase
-      .from("profiles")
-      .select("id, username, club_name, division, division_points, elo_rating, wins, draws, losses")
-      .order("elo_rating", { ascending: false })
-      .limit(80),
+    fetchLeagueLadder(supabase, { division: null, limit: 80 }),
     supabase
       .from("missions")
-      .select("id, mission_type, description, target, progress, reward_coins, expires_at, claimed")
+      .select("id, mission_type, mission_key, description, target, progress, reward_coins, expires_at, claimed, is_featured, recommended_mode, priority_weight, created_at")
       .eq("user_id", user.id)
       .eq("claimed", false)
       .gte("expires_at", now.toISOString()),
@@ -174,22 +132,31 @@ export default async function DivisionsPage() {
     redirect("/onboarding");
   }
 
-  const typedLeaderboard = (leaderboard ?? []) as LeaderboardRow[];
+  const typedLeaderboard = ladderResult.rows as LeaderboardRow[];
   const myRank = typedLeaderboard.findIndex((row) => row.id === profile.id) + 1;
-  const divisionRows = typedLeaderboard
-    .filter((row) => row.division === profile.division)
-    .slice(0, 12);
+  const { rows: divisionRows } = await fetchLeagueLadder(supabase, {
+    division: profile.division,
+    limit: 12,
+  });
 
   const promotion = buildPromotionHint(profile.division, profile.division_points);
   const division = DIVISIONS.find((item) => item.id === profile.division) ?? DIVISIONS.at(-1)!;
   const nextDivision = DIVISIONS.find((item) => item.id === profile.division - 1) ?? null;
 
-  const sortedMissions = sortMissions((missions ?? []) as MissionRow[]);
-  const dailyResetAt = getDailyReset(now);
-  const weeklyResetAt = getWeeklyReset(now);
+  const sortedMissions = sortMissionRows((missions ?? []) as MissionRow[]);
+  const cadence = getCadenceSnapshot(now);
+  const dailyResetAt = new Date(cadence.dailyResetAt);
+  const weeklyResetAt = new Date(cadence.weeklyResetAt);
   const inboxRows = (inbox ?? []) as FeedRow[];
   const newsRows = (news ?? []) as FeedRow[];
   const pendingRewards = (rewards ?? []) as RewardRow[];
+  const liveOpsEvents = buildLiveOpsEventCards({
+    now,
+    cadence,
+    missions: sortedMissions,
+    inbox: inboxRows,
+    news: newsRows,
+  });
 
   return (
     <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
@@ -395,20 +362,17 @@ export default async function DivisionsPage() {
           <Bell size={14} className="text-accent" />
         </div>
 
-        <div className="mt-2 grid gap-2 md:grid-cols-2">
-          <FeedCard
-            title="Inbox"
-            href="/inbox"
-            items={inboxRows.map((row) => ({ id: row.id, title: row.title, summary: row.body ?? "" }))}
-            emptyLabel="No inbox events yet."
-          />
-          <FeedCard
-            title="News"
-            href="/news"
-            items={newsRows.map((row) => ({ id: row.id, title: row.title, summary: row.summary ?? "" }))}
-            emptyLabel="No news updates yet."
-          />
-        </div>
+        {liveOpsEvents.length === 0 ? (
+          <p className="mt-2 rounded-md border border-border/70 bg-bg/55 p-3 font-mono text-xs text-text-dim">
+            No live ops events yet.
+          </p>
+        ) : (
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {liveOpsEvents.slice(0, 4).map((event) => (
+              <LiveOpsCard key={event.id} event={event} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -543,5 +507,27 @@ function FeedCard({
         </div>
       )}
     </div>
+  );
+}
+
+function LiveOpsCard({ event }: { event: LiveOpsEventCard }) {
+  return (
+    <Link
+      href={event.entryHref}
+      className="rounded-md border border-border/80 bg-bg/55 p-3 transition-colors duration-150 hover:border-border-light"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-accent">{event.category.replace("_", " ")}</p>
+          <p className="mt-1 font-mono text-xs text-text">{event.title}</p>
+        </div>
+        <span className="font-mono text-[10px] text-gold">P{event.priority}</span>
+      </div>
+      <p className="mt-2 font-mono text-[10px] text-text-mid">{event.summary}</p>
+      <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-text-dim">
+        <span>{formatAbsoluteTime(event.endsAt)}</span>
+        <ChevronRight size={12} />
+      </div>
+    </Link>
   );
 }

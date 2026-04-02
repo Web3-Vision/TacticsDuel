@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { fetchLeagueLadder } from "@/lib/league/server";
 import { DIVISIONS, cn, getEloRank } from "@/lib/utils";
 
 export default async function ClubPage() {
@@ -30,11 +31,7 @@ export default async function ClubPage() {
   const eloRank = profile ? getEloRank(profile.elo_rating) : null;
 
   // Get top 10 for a mini leaderboard
-  const { data: leaderboard } = await supabase
-    .from("profiles")
-    .select("id, username, club_name, division, elo_rating, wins, draws, losses")
-    .order("elo_rating", { ascending: false })
-    .limit(10);
+  const { rows: leaderboard } = await fetchLeagueLadder(supabase, { limit: 10 });
 
   return (
     <div className="p-4 flex flex-col gap-3">

@@ -1,0 +1,15 @@
+{
+  "branch": "spoa-121-r2-candidate",
+  "commit": "0000000000000000000000000000000000000000",
+  "issues": [
+    {
+      "id": "SPOA-121",
+      "url": "/SPOA/issues/SPOA-121"
+    }
+  ],
+  "validation": [
+    "npm run lint",
+    "npm run typecheck",
+    "npm run test"
+  ]
+}

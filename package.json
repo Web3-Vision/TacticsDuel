@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "qa:auth-fixture": "node scripts/qa-auth-fixture.mjs",
+    "qa:release-candidate": "node scripts/release-candidate-gate.mjs",
     "qa:state-fixture": "node scripts/qa-state-fixture.mjs",
     "test": "vitest run",
     "ci": "npm run lint && npm run typecheck && npm run test"

@@ -8,6 +8,7 @@ import { getFormation } from "@/lib/data/formations";
 import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observability/realtime";
 import { persistNarrativeArtifacts } from "@/lib/engine/narrative-pipeline";
 import { resolveStarterIdsFromMatchSquad } from "@/lib/squad/persisted-squad";
+import { computeRankedProgression, type RankedMatchResult } from "@/lib/league/progression";
 import type { Player, Tactics } from "@/lib/types";
 
 // Resolve squad rows (from DB) to Player objects
@@ -244,6 +245,8 @@ export async function POST(request: Request) {
     // Update player profiles for ranked
     if (match.match_type === "ranked") {
       const rankedProfilesUpdateStartedAt = Date.now();
+      const nowIso = new Date().toISOString();
+
       // Home player
       const { data: homeProfile } = await supabase
         .from("profiles")
@@ -252,73 +255,34 @@ export async function POST(request: Request) {
         .single();
 
       if (homeProfile) {
-        const newStreak =
-          homeResult === "win"
-            ? homeProfile.current_streak + 1
-            : homeResult === "loss"
-              ? 0
-              : homeProfile.current_streak;
-
-        const newDivPoints = Math.max(0, homeProfile.division_points + homeDivPointsChange);
-        const newRankedInCycle = (homeProfile.ranked_matches_in_cycle ?? 0) + 1;
-        const newDivMatchesPlayed = (homeProfile.division_matches_played ?? 0) + 1;
-
-        // Check for cycle completion (5 ranked matches)
-        const cycleComplete = newRankedInCycle >= 5;
-
-        // Check for division season completion (10 matches)
-        let newDivision = homeProfile.division;
-        let newDivisionPoints = newDivPoints;
-        let newDivSeason = homeProfile.division_season ?? 1;
-        let newDivWins = (homeProfile.division_wins ?? 0) + (homeResult === "win" ? 1 : 0);
-        let newDivDraws = (homeProfile.division_draws ?? 0) + (homeResult === "draw" ? 1 : 0);
-        let newDivLosses = (homeProfile.division_losses ?? 0) + (homeResult === "loss" ? 1 : 0);
-        let newDivMatchesPlayedFinal = newDivMatchesPlayed;
-        let seasonCoins = 0;
-
-        if (newDivMatchesPlayed >= 10) {
-          // Evaluate promotion/relegation
-          const divConfig = getDivisionConfig(homeProfile.division);
-          if (divConfig?.pointsToPromote && newDivisionPoints >= divConfig.pointsToPromote) {
-            // Promote!
-            newDivision = Math.max(1, homeProfile.division - 1);
-            seasonCoins = divConfig.rewardCoins;
-          } else if (newDivisionPoints <= 0 && homeProfile.division < 10) {
-            // Relegate
-            newDivision = homeProfile.division + 1;
-          }
-          // Reset division season
-          newDivisionPoints = 0;
-          newDivSeason += 1;
-          newDivWins = 0;
-          newDivDraws = 0;
-          newDivLosses = 0;
-          newDivMatchesPlayedFinal = 0;
-        }
+        const progression = computeRankedProgression(
+          homeProfile,
+          homeResult as RankedMatchResult,
+          homeDivPointsChange,
+          nowIso,
+        );
 
         await supabase
           .from("profiles")
           .update({
             elo_rating: homeProfile.elo_rating + homeEloChange,
-            division_points: newDivisionPoints,
-            division: newDivision,
-            wins: homeProfile.wins + (homeResult === "win" ? 1 : 0),
-            draws: homeProfile.draws + (homeResult === "draw" ? 1 : 0),
-            losses: homeProfile.losses + (homeResult === "loss" ? 1 : 0),
-            current_streak: newStreak,
-            best_streak: Math.max(homeProfile.best_streak, newStreak),
-            ranked_matches_in_cycle: cycleComplete ? 0 : newRankedInCycle,
-            squad_locked: cycleComplete ? false : homeProfile.squad_locked,
-            transfers_remaining: cycleComplete ? 2 : (homeProfile.transfers_remaining ?? 0),
-            division_wins: newDivWins,
-            division_draws: newDivDraws,
-            division_losses: newDivLosses,
-            division_season: newDivSeason,
-            division_matches_played: newDivMatchesPlayedFinal,
-            coins: (homeProfile.coins ?? 0) + seasonCoins,
-            updated_at: new Date().toISOString(),
+            ...progression.patch,
           })
           .eq("id", match.home_user_id);
+
+        if (progression.seasonReward) {
+          await supabase
+            .from("season_rewards")
+            .upsert({
+              user_id: match.home_user_id,
+              season: progression.seasonReward.season,
+              highest_division: progression.seasonReward.highestDivision,
+              coins_earned: progression.seasonReward.coinsEarned,
+              claimed: false,
+            }, {
+              onConflict: "user_id,season",
+            });
+        }
       }
 
       // Away player (if real, not ghost)
@@ -330,26 +294,34 @@ export async function POST(request: Request) {
           .single();
 
         if (awayProfile) {
-          const newStreak =
-            awayResult === "win"
-              ? awayProfile.current_streak + 1
-              : awayResult === "loss"
-                ? 0
-                : awayProfile.current_streak;
+          const progression = computeRankedProgression(
+            awayProfile,
+            awayResult as RankedMatchResult,
+            awayDivPointsChange,
+            nowIso,
+          );
 
           await supabase
             .from("profiles")
             .update({
               elo_rating: awayProfile.elo_rating + awayEloChange,
-              division_points: Math.max(0, awayProfile.division_points + awayDivPointsChange),
-              wins: awayProfile.wins + (awayResult === "win" ? 1 : 0),
-              draws: awayProfile.draws + (awayResult === "draw" ? 1 : 0),
-              losses: awayProfile.losses + (awayResult === "loss" ? 1 : 0),
-              current_streak: newStreak,
-              best_streak: Math.max(awayProfile.best_streak, newStreak),
-              updated_at: new Date().toISOString(),
+              ...progression.patch,
             })
             .eq("id", match.away_user_id);
+
+          if (progression.seasonReward) {
+            await supabase
+              .from("season_rewards")
+              .upsert({
+                user_id: match.away_user_id,
+                season: progression.seasonReward.season,
+                highest_division: progression.seasonReward.highestDivision,
+                coins_earned: progression.seasonReward.coinsEarned,
+                claimed: false,
+              }, {
+                onConflict: "user_id,season",
+              });
+          }
         }
       }
       timings.rankedProfilesUpdateMs = Date.now() - rankedProfilesUpdateStartedAt;
@@ -379,20 +351,4 @@ export async function POST(request: Request) {
       "INTERNAL_ERROR"
     );
   }
-}
-
-function getDivisionConfig(divisionId: number) {
-  const DIVISIONS = [
-    { id: 10, name: "Amateur", pointsToPromote: 30, rewardCoins: 100 },
-    { id: 9, name: "Semi-Pro", pointsToPromote: 40, rewardCoins: 200 },
-    { id: 8, name: "Professional", pointsToPromote: 50, rewardCoins: 350 },
-    { id: 7, name: "Championship", pointsToPromote: 60, rewardCoins: 500 },
-    { id: 6, name: "Premier", pointsToPromote: 70, rewardCoins: 750 },
-    { id: 5, name: "Elite", pointsToPromote: 80, rewardCoins: 1000 },
-    { id: 4, name: "World Class", pointsToPromote: 90, rewardCoins: 1500 },
-    { id: 3, name: "Legendary", pointsToPromote: 100, rewardCoins: 2000 },
-    { id: 2, name: "Ultimate", pointsToPromote: 120, rewardCoins: 3000 },
-    { id: 1, name: "Ballon d'Or", pointsToPromote: null, rewardCoins: 5000 },
-  ];
-  return DIVISIONS.find((d) => d.id === divisionId);
 }
