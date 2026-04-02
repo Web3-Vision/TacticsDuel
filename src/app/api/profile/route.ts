@@ -10,6 +10,12 @@ import {
   type AccountStatus,
 } from "@/lib/profile-options";
 
+function parseMissingColumnFromError(error: { code?: string; message?: string } | null) {
+  if (!error || error.code !== "PGRST204") return null;
+  const match = /Could not find the '([^']+)' column/i.exec(error.message ?? "");
+  return match?.[1] ?? null;
+}
+
 export async function PATCH(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -22,6 +28,8 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json();
   const updates: Record<string, unknown> = {};
+  const requestedManagerName =
+    typeof body.manager_name === "string" ? body.manager_name.trim() : null;
 
   if (body.favorite_team !== undefined) {
     updates.favorite_team =
@@ -31,8 +39,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.manager_name !== undefined) {
-    const managerName =
-      typeof body.manager_name === "string" ? body.manager_name.trim() : "";
+    const managerName = requestedManagerName ?? "";
     if (managerName.length > 0 && managerName.length < 2) {
       return NextResponse.json({ error: "Manager name must be at least 2 characters" }, { status: 400 });
     }
@@ -136,13 +143,34 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase
-    .from("profiles")
-    .update(updates)
-    .eq("id", user.id);
+  const fallbackUpdates: Record<string, unknown> = { ...updates };
+  while (true) {
+    const { error } = await supabase
+      .from("profiles")
+      .update(fallbackUpdates)
+      .eq("id", user.id);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!error) break;
+
+    const missingColumn = parseMissingColumnFromError(error);
+    if (!missingColumn || !(missingColumn in fallbackUpdates)) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (
+      missingColumn === "manager_name" &&
+      requestedManagerName &&
+      !("username" in fallbackUpdates)
+    ) {
+      // Compatibility path for older profile schemas without manager_name.
+      // Persisting into username keeps manager identity edits visible after reload.
+      fallbackUpdates.username = requestedManagerName;
+    }
+
+    delete fallbackUpdates[missingColumn];
+    if (Object.keys(fallbackUpdates).length === 0) {
+      return NextResponse.json({ error: "No supported fields available for this profile schema" }, { status: 400 });
+    }
   }
 
   return NextResponse.json({ ok: true });
