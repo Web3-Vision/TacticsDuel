@@ -192,28 +192,42 @@ export default function OnboardingPage() {
     setSaving(true);
     setSaveError("");
     try {
+      const profilePayload = {
+        manager_name: managerName.trim(),
+        favorite_team: favoriteTeam || null,
+        age: age ? parseInt(age) : null,
+        manager_avatar_archetype: managerArchetype,
+        manager_hair_style: hairStyle,
+        manager_hair_color: hairColor,
+        manager_skin_tone: skinTone,
+        manager_beard_style: beardStyle,
+      };
+
+      const profileRes = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profilePayload),
+      });
+
+      if (!profileRes.ok) {
+        const data = await profileRes.json();
+        throw new Error(data.error || "Failed to save profile");
+      }
+
       await useSquadStore.getState().saveToSupabase();
 
-      const res = await fetch("/api/profile", {
+      const completionRes = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          manager_name: managerName.trim(),
-          favorite_team: favoriteTeam || null,
-          age: age ? parseInt(age) : null,
-          manager_avatar_archetype: managerArchetype,
-          manager_hair_style: hairStyle,
-          manager_hair_color: hairColor,
-          manager_skin_tone: skinTone,
-          manager_beard_style: beardStyle,
           captain_player_id: captainId,
           onboarding_completed: true,
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to save profile");
+      if (!completionRes.ok) {
+        const data = await completionRes.json();
+        throw new Error(data.error || "Failed to finalize onboarding");
       }
 
       router.push("/home");

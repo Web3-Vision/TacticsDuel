@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import {
   ACCOUNT_STATUSES,
   MANAGER_ARCHETYPES,
@@ -14,6 +14,39 @@ function parseMissingColumnFromError(error: { code?: string; message?: string } 
   if (!error || error.code !== "PGRST204") return null;
   const match = /Could not find the '([^']+)' column/i.exec(error.message ?? "");
   return match?.[1] ?? null;
+}
+
+function buildProfileSeed(user: {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}) {
+  const metadata = user.user_metadata ?? {};
+  const usernameFromMetadata =
+    typeof metadata.username === "string" ? metadata.username.trim() : "";
+  const clubNameFromMetadata =
+    typeof metadata.club_name === "string" ? metadata.club_name.trim() : "";
+  const emailPrefix = user.email?.split("@")[0]?.trim() ?? "";
+  const uniqueSuffix = user.id.slice(0, 6);
+  const usernameBase = usernameFromMetadata || emailPrefix || "manager";
+  const safeUsernameBase = usernameBase.replace(/\s+/g, "_").slice(0, 24) || "manager";
+
+  return {
+    id: user.id,
+    username: `${safeUsernameBase}_${uniqueSuffix}`,
+    club_name: clubNameFromMetadata || `FC ${uniqueSuffix}`,
+  };
+}
+
+async function ensureProfileExists(user: {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}) {
+  const serviceSupabase = await createServiceClient();
+  const seed = buildProfileSeed(user);
+  const { error } = await serviceSupabase.from("profiles").upsert(seed, { onConflict: "id" });
+  return error;
 }
 
 export async function PATCH(request: NextRequest) {
@@ -144,17 +177,34 @@ export async function PATCH(request: NextRequest) {
   }
 
   const fallbackUpdates: Record<string, unknown> = { ...updates };
+  let profileSeeded = false;
   while (true) {
-    const { error } = await supabase
+    const { data: updatedProfile, error } = await supabase
       .from("profiles")
       .update(fallbackUpdates)
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .select("id")
+      .maybeSingle();
 
-    if (!error) break;
+    if (!error && updatedProfile) break;
+
+    if (!error && !updatedProfile) {
+      if (profileSeeded) {
+        return NextResponse.json({ error: "Profile record could not be created" }, { status: 500 });
+      }
+
+      const seedError = await ensureProfileExists(user);
+      if (seedError) {
+        return NextResponse.json({ error: seedError.message }, { status: 500 });
+      }
+
+      profileSeeded = true;
+      continue;
+    }
 
     const missingColumn = parseMissingColumnFromError(error);
     if (!missingColumn || !(missingColumn in fallbackUpdates)) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: error?.message ?? "Failed to update profile" }, { status: 500 });
     }
 
     if (
