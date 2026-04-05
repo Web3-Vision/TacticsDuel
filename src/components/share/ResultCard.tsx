@@ -85,6 +85,24 @@ export default function ResultCard({
             </p>
           </div>
         )}
+        {divPointsChange != null && (
+          <div className="text-center">
+            <p className="font-mono text-[10px] text-text-dim uppercase">Div</p>
+            <p
+              className={cn(
+                "font-mono text-xs tabular-nums font-medium",
+                divPointsChange > 0
+                  ? "text-win"
+                  : divPointsChange < 0
+                    ? "text-loss"
+                    : "text-draw"
+              )}
+            >
+              {divPointsChange > 0 ? "+" : ""}
+              {divPointsChange}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Footer */}

@@ -1,5 +1,3 @@
-import type { EventType, MatchEvent } from "../types";
-
 interface CommentaryContext {
   minute: number;
   homeScore: number;

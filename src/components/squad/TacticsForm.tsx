@@ -84,7 +84,6 @@ export default function TacticsForm({ showFormation = true, stickyButton = true 
   const [htWinningMentality, setHtWinningMentality] = useState<Mentality>("Defensive");
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     async function loadTactics() {
@@ -113,7 +112,6 @@ export default function TacticsForm({ showFormation = true, stickyButton = true 
           setHtWinningMentality(data.ht_if_winning_mentality as Mentality);
         }
       }
-      setLoaded(true);
     }
     loadTactics();
   }, [setFormation]);

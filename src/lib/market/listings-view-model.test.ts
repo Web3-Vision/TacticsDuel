@@ -6,6 +6,8 @@ import {
   type TransferListing,
 } from "./listings-view-model";
 
+const BASE_NOW_MS = new Date("2026-04-02T09:00:00.000Z").getTime();
+
 const BASE_LISTING: TransferListing = {
   id: "listing-1",
   seller_user_id: "seller-1",
@@ -39,6 +41,7 @@ describe("market listing view-model", () => {
       bidAmount: 120,
       currentUserId: "seller-1",
       coins: 500,
+      nowMs: BASE_NOW_MS,
     });
 
     expect(result.ok).toBe(false);
@@ -51,6 +54,7 @@ describe("market listing view-model", () => {
       bidAmount: 120,
       currentUserId: "buyer-1",
       coins: 90,
+      nowMs: BASE_NOW_MS,
     });
 
     expect(result.ok).toBe(false);
@@ -69,6 +73,7 @@ describe("market listing view-model", () => {
       bidAmount: 179,
       currentUserId: "buyer-1",
       coins: 1000,
+      nowMs: BASE_NOW_MS,
     });
 
     expect(result.ok).toBe(false);

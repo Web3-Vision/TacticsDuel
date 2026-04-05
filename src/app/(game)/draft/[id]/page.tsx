@@ -136,6 +136,8 @@ export default function DraftPage() {
   // ── Pick timer ─────────────────────────────────────────────────────────
 
   const isMyTurn = draft?.current_picker === userId;
+  const draftStatus = draft?.status;
+  const currentPickNumber = draft?.current_pick;
 
   useEffect(() => {
     if (timerRef.current) {
@@ -143,7 +145,7 @@ export default function DraftPage() {
       timerRef.current = null;
     }
 
-    if (!draft || draft.status !== "drafting") return;
+    if (draftStatus !== "drafting") return;
 
     setTimer(PICK_TIMER_SECONDS);
 
@@ -160,7 +162,7 @@ export default function DraftPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [draft?.current_pick, draft?.status]);
+  }, [currentPickNumber, draftStatus]);
 
   // ── Make pick ──────────────────────────────────────────────────────────
 
