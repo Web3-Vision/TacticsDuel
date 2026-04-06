@@ -175,7 +175,7 @@ export default function PlayPage() {
       }
 
       if (data.status === "match_ready" && data.mode === "bring_squad") {
-        router.push("/match/live");
+        router.push(`/matchday?matchId=${encodeURIComponent(data.matchId)}`);
       } else if (data.status === "draft_ready" && data.mode === "live_draft") {
         const draftRes = await fetch("/api/draft/create", {
           method: "POST",

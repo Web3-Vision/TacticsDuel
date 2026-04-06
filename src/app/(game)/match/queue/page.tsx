@@ -15,6 +15,15 @@ export default function QueuePage() {
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  async function viewMatch(matchId: string, liveMultiplayer: boolean) {
+    if (liveMultiplayer) {
+      router.push(`/matchday?matchId=${encodeURIComponent(matchId)}`);
+      return;
+    }
+
+    await simulateAndView(matchId);
+  }
+
   async function joinQueue() {
     setError("");
     setState("joining");
@@ -24,7 +33,7 @@ export default function QueuePage() {
 
       if (data.status === "match_found" && data.matchId) {
         setState("found");
-        await simulateAndView(data.matchId);
+        await viewMatch(data.matchId, Boolean(data.liveMultiplayer));
         return;
       }
 
@@ -50,7 +59,7 @@ export default function QueuePage() {
         if (data.status === "match_found" && data.matchId) {
           clearInterval(pollRef.current!);
           setState("found");
-          await simulateAndView(data.matchId);
+          await viewMatch(data.matchId, Boolean(data.liveMultiplayer));
           return;
         }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PLAYERS } from "@/lib/data/players";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ interface DraftPick {
 
 interface DraftSession {
   id: string;
+  invite_id: string;
   user_a: string;
   user_b: string;
   player_pool: string[];
@@ -57,6 +58,7 @@ function ovrColor(ovr: number): string {
 
 export default function DraftPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const draftId = params?.id;
 
   const [draft, setDraft] = useState<DraftSession | null>(null);
@@ -67,6 +69,7 @@ export default function DraftPage() {
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [timer, setTimer] = useState(PICK_TIMER_SECONDS);
+  const [completedMatchId, setCompletedMatchId] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const supabase = useRef(createClient()).current;
@@ -106,6 +109,18 @@ export default function DraftPage() {
     init();
   }, [draftId, supabase]);
 
+  const resolveCompletedMatchId = useCallback(async (inviteId: string) => {
+    const { data } = await supabase
+      .from("friend_invites")
+      .select("match_id")
+      .eq("id", inviteId)
+      .single();
+
+    if (data?.match_id) {
+      setCompletedMatchId(data.match_id);
+    }
+  }, [supabase]);
+
   // ── Realtime subscription ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -122,7 +137,11 @@ export default function DraftPage() {
           filter: `id=eq.${draftId}`,
         },
         (payload) => {
-          setDraft(payload.new as DraftSession);
+          const nextDraft = payload.new as DraftSession;
+          setDraft(nextDraft);
+          if (nextDraft.status === "completed" && nextDraft.invite_id) {
+            void resolveCompletedMatchId(nextDraft.invite_id);
+          }
           setSelectedPlayer(null);
         }
       )
@@ -131,11 +150,19 @@ export default function DraftPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [draftId, supabase]);
+  }, [draftId, resolveCompletedMatchId, supabase]);
+
+  useEffect(() => {
+    if (draft?.status === "completed" && draft.invite_id) {
+      void resolveCompletedMatchId(draft.invite_id);
+    }
+  }, [draft?.invite_id, draft?.status, resolveCompletedMatchId]);
 
   // ── Pick timer ─────────────────────────────────────────────────────────
 
   const isMyTurn = draft?.current_picker === userId;
+  const draftStatus = draft?.status;
+  const currentPickNumber = draft?.current_pick;
 
   useEffect(() => {
     if (timerRef.current) {
@@ -143,7 +170,7 @@ export default function DraftPage() {
       timerRef.current = null;
     }
 
-    if (!draft || draft.status !== "drafting") return;
+    if (draftStatus !== "drafting") return;
 
     setTimer(PICK_TIMER_SECONDS);
 
@@ -160,7 +187,7 @@ export default function DraftPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [draft?.current_pick, draft?.status]);
+  }, [currentPickNumber, draftStatus]);
 
   // ── Make pick ──────────────────────────────────────────────────────────
 
@@ -175,9 +202,16 @@ export default function DraftPage() {
         body: JSON.stringify({ draftId, playerId: selectedPlayer }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         setError(data.error ?? "Pick failed");
+        return;
+      }
+
+      if (data.matchId) {
+        setCompletedMatchId(data.matchId);
+        router.push(`/matchday?matchId=${encodeURIComponent(data.matchId)}`);
       }
       setSelectedPlayer(null);
     } catch {
@@ -185,7 +219,7 @@ export default function DraftPage() {
     } finally {
       setPicking(false);
     }
-  }, [selectedPlayer, draftId, picking, isMyTurn]);
+  }, [selectedPlayer, draftId, picking, isMyTurn, router]);
 
   // ── Derived state ──────────────────────────────────────────────────────
 
@@ -486,10 +520,20 @@ export default function DraftPage() {
           </p>
         )}
         {isComplete ? (
-          <div className="flex items-center justify-center h-11">
-            <span className="font-mono text-sm text-accent">
-              Draft complete — {myPicks.length} players drafted
-            </span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-center h-11">
+              <span className="font-mono text-sm text-accent">
+                Draft complete — {myPicks.length} players drafted
+              </span>
+            </div>
+            {completedMatchId && (
+              <button
+                onClick={() => router.push(`/matchday?matchId=${encodeURIComponent(completedMatchId)}`)}
+                className="w-full h-11 rounded-[4px] bg-accent text-bg font-mono text-sm uppercase tracking-wide transition-colors duration-100 hover:bg-accent/90"
+              >
+                Enter Live Match
+              </button>
+            )}
           </div>
         ) : (
           <button

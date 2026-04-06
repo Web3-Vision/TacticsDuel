@@ -4,6 +4,7 @@ import { createTraceId, logDomainEvent, recordApiResult } from "@/lib/observabil
 import {
   SessionError,
   closeSession,
+  connectMatchParticipant,
   createRoom,
   disconnect,
   getSessionForUser,
@@ -109,6 +110,55 @@ export async function POST(request: Request) {
         sessionId: session.id,
         matchId: session.matchId ?? "",
       });
+    }
+
+    if (action === "connect_match") {
+      const matchId = typeof body?.matchId === "string" ? body.matchId.trim() : "";
+      if (!matchId) {
+        return respond({ error: "Missing matchId" }, 400, { action: contextAction });
+      }
+
+      const supabase = await createClient();
+      const { data: match, error: matchError } = await supabase
+        .from("matches")
+        .select("id, home_user_id, away_user_id, status")
+        .eq("id", matchId)
+        .single();
+
+      if (matchError || !match) {
+        return respond({ error: "Match not found" }, 404, { action: contextAction, matchId });
+      }
+
+      if (!match.away_user_id) {
+        return respond(
+          { error: "This match does not have a live multiplayer opponent yet" },
+          409,
+          { action: contextAction, matchId },
+        );
+      }
+
+      if (match.status === "completed" || match.status === "cancelled") {
+        return respond(
+          { error: "This match is no longer active" },
+          409,
+          { action: contextAction, matchId, status: match.status },
+        );
+      }
+
+      if (userId !== match.home_user_id && userId !== match.away_user_id) {
+        return respond(
+          { error: "You are not a participant in this match" },
+          403,
+          { action: contextAction, matchId },
+        );
+      }
+
+      const session = connectMatchParticipant(matchId, userId, match.home_user_id, match.away_user_id);
+      return respond(
+        { session: formatSessionResponse(session, userId) },
+        200,
+        { action: contextAction, sessionId: session.id, matchId },
+      );
     }
 
     if (action === "join_room") {

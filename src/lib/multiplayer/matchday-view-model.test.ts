@@ -38,6 +38,7 @@ describe("matchday view model", () => {
   it("tracks reconnect state transitions", () => {
     const disconnectedLive: MatchdaySessionView = {
       id: "session-1",
+      matchId: "match-1",
       roomCode: "ROOM42",
       status: "active",
       turnNumber: 3,
@@ -116,6 +117,7 @@ describe("matchday view model", () => {
 
     const waiting: MatchdaySessionView = {
       id: "session-2",
+      matchId: "match-2",
       roomCode: "ROOM88",
       status: "waiting",
       turnNumber: 1,
@@ -135,6 +137,7 @@ describe("matchday view model", () => {
   it("gates tactical command submission from authoritative session state", () => {
     const base: MatchdaySessionView = {
       id: "session-3",
+      matchId: "match-3",
       roomCode: "ROOM99",
       status: "active",
       turnNumber: 5,
