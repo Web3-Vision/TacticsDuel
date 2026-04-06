@@ -74,7 +74,7 @@ export default function OnboardingPage() {
 
   const {
     formationId, setFormation, slots, bench, activeSlotIndex, setActiveSlot,
-    addPlayer, removePlayer, addBenchPlayer, removeBenchPlayer, clearSquad,
+    addPlayer, addBenchPlayer, removeBenchPlayer, clearSquad,
     filledCount, benchFilledCount, totalFilledCount, totalSpent,
     budgetRemaining, isPlayerInSquad, canAfford, captainId, setCaptain,
   } = useSquadStore();
@@ -91,14 +91,14 @@ export default function OnboardingPage() {
     if (step === 3 && suggestedPosition && posFilter === "ALL" && !startersFull) {
       setPosFilter(suggestedPosition);
     }
-  }, [step, suggestedPosition]);
+  }, [step, suggestedPosition, posFilter, startersFull]);
 
   // When starters are full, reset filter to ALL for bench picking
   useEffect(() => {
     if (startersFull && step === 3) {
       setPosFilter("ALL");
     }
-  }, [startersFull]);
+  }, [startersFull, step]);
 
   const filteredPlayers = useMemo(() => {
     let list = players;
