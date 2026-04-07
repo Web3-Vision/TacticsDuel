@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SessionError,
+  connectMatchParticipant,
   disconnect,
   createRoom,
   getSessionForUser,
@@ -198,6 +199,47 @@ describe("multiplayer session service smoke tests", () => {
     expect(payload.commandType).toBe("play_style_change");
     expect(payload.commandVersion).toBe(1);
     expect(payload.playStyle).toBe("high_press");
+    expect(typeof payload.commandHash).toBe("string");
+  });
+
+  it("connects both real match participants into the same room by match id", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const matchId = `match-linked-${crypto.randomUUID()}`;
+
+    const awayConnectedFirst = connectMatchParticipant(matchId, awayUserId, homeUserId, awayUserId);
+    expect(awayConnectedFirst.matchId).toBe(matchId);
+    expect(awayConnectedFirst.status).toBe("waiting");
+    expect(awayConnectedFirst.participants).toHaveLength(1);
+    expect(awayConnectedFirst.participants[0]?.side).toBe("away");
+
+    const homeConnectedSecond = connectMatchParticipant(matchId, homeUserId, homeUserId, awayUserId);
+    expect(homeConnectedSecond.id).toBe(awayConnectedFirst.id);
+    expect(homeConnectedSecond.status).toBe("active");
+    expect(homeConnectedSecond.phase).toBe("first_half");
+    expect(homeConnectedSecond.activeSide).toBe("home");
+    expect(homeConnectedSecond.participants.map((participant) => participant.side).sort()).toEqual(["away", "home"]);
+  });
+
+  it("accepts tactical command payloads used by the matchday UI", () => {
+    const homeUserId = `home-${crypto.randomUUID()}`;
+    const awayUserId = `away-${crypto.randomUUID()}`;
+    const created = createRoom(homeUserId, "match-tactical-1");
+    const activeSession = joinRoom(awayUserId, created.roomCode);
+
+    const updated = submitTurn(activeSession.id, homeUserId, 1, {
+      action: "tactical_command",
+      commandType: "mentality_shift",
+      value: "Attacking",
+      phase: "first_half",
+    });
+
+    const payload = updated.turns[0]?.payload;
+    expect(payload.action).toBe("tactical_command");
+    expect(payload.commandType).toBe("mentality_shift");
+    expect(payload.commandVersion).toBe(1);
+    expect(payload.value).toBe("Attacking");
+    expect(payload.phase).toBe("first_half");
     expect(typeof payload.commandHash).toBe("string");
   });
 });

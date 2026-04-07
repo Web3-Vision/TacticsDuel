@@ -11,6 +11,7 @@ export interface TimelineItem {
 
 export interface MatchdaySessionView {
   id: string;
+  matchId: string | null;
   status: "waiting" | "active" | "completed";
   roomCode: string;
   turnNumber: number;

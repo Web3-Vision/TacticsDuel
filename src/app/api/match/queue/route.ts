@@ -179,6 +179,7 @@ export async function POST() {
         queued: !match,
         matchFound: !!match,
         matchId: match?.id ?? null,
+        liveMultiplayer: Boolean(match?.away_user_id),
       },
       200,
       { userId: user.id, matchFound: Number(Boolean(match)), ...timings }
@@ -237,7 +238,7 @@ export async function GET() {
       const recentMatchLookupStartedAt = Date.now();
       const { data: recentMatch } = await supabase
         .from("matches")
-        .select("id, status")
+        .select("id, status, away_user_id")
         .or(`home_user_id.eq.${user.id},away_user_id.eq.${user.id}`)
         .in("status", ["pending", "accepted", "simulating"])
         .order("created_at", { ascending: false })
@@ -252,6 +253,7 @@ export async function GET() {
           inQueue: false,
           matchFound: true,
           matchId: recentMatch.id,
+          liveMultiplayer: Boolean(recentMatch.away_user_id),
         }, 200, { userId: user.id, matchFound: 1, ...timings });
       }
 
@@ -291,6 +293,7 @@ export async function GET() {
         inQueue: false,
         matchFound: true,
         matchId: match.id,
+        liveMultiplayer: Boolean(match.away_user_id),
         waitTime: waitSeconds,
       }, 200, { userId: user.id, matchFound: 1, waitSeconds, ...timings });
     }
@@ -319,6 +322,7 @@ export async function GET() {
           inQueue: false,
           matchFound: true,
           matchId: ghostMatch.id,
+          liveMultiplayer: Boolean(ghostMatch.away_user_id),
           waitTime: waitSeconds,
         }, 200, { userId: user.id, matchFound: 1, waitSeconds, ...timings });
       }

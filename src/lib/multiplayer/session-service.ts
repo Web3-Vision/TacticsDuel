@@ -8,7 +8,11 @@ export type LiveMatchCommandType =
   | "substitution"
   | "formation_change"
   | "play_style_change"
-  | "set_piece_roles";
+  | "set_piece_roles"
+  | "mentality_shift"
+  | "tempo_shift"
+  | "pressing_line"
+  | "width_shift";
 
 export interface SessionParticipant {
   userId: string;
@@ -67,7 +71,7 @@ const MAX_PLAY_STYLE_CHANGES_PER_SIDE = 6;
 const MAX_SET_PIECE_ROLE_CHANGES_PER_SIDE = 8;
 const ROOM_CODE_LENGTH = 6;
 const STALE_SESSION_MS = 2 * 60 * 60 * 1000;
-const RESERVED_PAYLOAD_KEYS = new Set(["status", "activeSide", "turnNumber", "phase", "participants"]);
+const RESERVED_PAYLOAD_KEYS = new Set(["status", "activeSide", "turnNumber", "participants"]);
 const ALLOWED_FORMATIONS = new Set(FORMATIONS.map((formation) => formation.id));
 const ALLOWED_PLAY_STYLES = new Set(["balanced", "counter", "possession", "high_press", "direct"]);
 const SET_PIECE_ROLE_KEYS = ["captain", "penaltyTaker", "freeKickTaker", "leftCornerTaker", "rightCornerTaker"] as const;
@@ -343,9 +347,35 @@ function normalizeCommandPayload(
     } as const;
   }
 
+  if (
+    commandType === "mentality_shift" ||
+    commandType === "tempo_shift" ||
+    commandType === "pressing_line" ||
+    commandType === "width_shift"
+  ) {
+    assertAllowedKeys(payload, ["action", "commandType", "value", "phase", "sentAt"]);
+
+    if (typeof payload.value !== "string" || !payload.value.trim()) {
+      throw new SessionError("INVALID_ACTION", "value must be a non-empty string");
+    }
+
+    if ("phase" in payload && payload.phase !== session.phase) {
+      throw new SessionError("INVALID_ACTION", "phase is out of sync with the session");
+    }
+
+    return {
+      action: "tactical_command",
+      commandType,
+      commandVersion: 1,
+      value: payload.value.trim(),
+      phase: session.phase,
+      ...(typeof payload.sentAt === "string" ? { sentAt: payload.sentAt } : {}),
+    } as const;
+  }
+
   throw new SessionError(
     "INVALID_ACTION",
-    "Unsupported command type. Expected one of phase_transition, substitution, formation_change, play_style_change, set_piece_roles"
+    "Unsupported command type. Expected one of phase_transition, substitution, formation_change, play_style_change, set_piece_roles, mentality_shift, tempo_shift, pressing_line, width_shift"
   );
 }
 
@@ -367,6 +397,7 @@ function getRegistry() {
     __tacticsDuelSessionRegistry?: {
       byId: Map<string, MatchSession>;
       roomToId: Map<string, string>;
+      matchToId: Map<string, string>;
     };
   };
 
@@ -374,6 +405,7 @@ function getRegistry() {
     globalRegistry.__tacticsDuelSessionRegistry = {
       byId: new Map<string, MatchSession>(),
       roomToId: new Map<string, string>(),
+      matchToId: new Map<string, string>(),
     };
   }
 
@@ -396,6 +428,9 @@ function cleanupStaleSessions() {
     if (new Date(session.updatedAt).getTime() < cutoff) {
       registry.byId.delete(sessionId);
       registry.roomToId.delete(session.roomCode);
+      if (session.matchId) {
+        registry.matchToId.delete(session.matchId);
+      }
     }
   }
 }
@@ -432,7 +467,11 @@ function roomCodeForNewSession(): string {
   throw new Error("Failed to allocate room code");
 }
 
-export function createRoom(userId: string, matchId?: string | null): MatchSession {
+export function createRoom(
+  userId: string,
+  matchId?: string | null,
+  side: SessionSide = "home",
+): MatchSession {
   cleanupStaleSessions();
   const registry = getRegistry();
   const timestamp = nowIso();
@@ -453,7 +492,7 @@ export function createRoom(userId: string, matchId?: string | null): MatchSessio
     participants: [
       {
         userId,
-        side: "home",
+        side,
         connected: true,
         joinedAt: timestamp,
         lastSeenAt: timestamp,
@@ -464,7 +503,76 @@ export function createRoom(userId: string, matchId?: string | null): MatchSessio
 
   registry.byId.set(id, session);
   registry.roomToId.set(roomCode, id);
+  if (session.matchId) {
+    registry.matchToId.set(session.matchId, id);
+  }
 
+  return copySession(session);
+}
+
+export function connectMatchParticipant(
+  matchId: string,
+  userId: string,
+  homeUserId: string,
+  awayUserId: string,
+): MatchSession {
+  cleanupStaleSessions();
+  const registry = getRegistry();
+  const normalizedMatchId = matchId.trim();
+  const expectedSide: SessionSide | null =
+    userId === homeUserId ? "home" : userId === awayUserId ? "away" : null;
+
+  if (!normalizedMatchId) {
+    throw new SessionError("INVALID_ACTION", "Match id is required");
+  }
+
+  if (!expectedSide) {
+    throw new SessionError("NOT_A_PARTICIPANT", "User is not a participant in this match");
+  }
+
+  const existingSessionId = registry.matchToId.get(normalizedMatchId);
+  if (!existingSessionId) {
+    return createRoom(userId, normalizedMatchId, expectedSide);
+  }
+
+  const session = getById(existingSessionId);
+  const timestamp = nowIso();
+  const existingParticipant = session.participants.find((participant) => participant.userId === userId);
+
+  if (existingParticipant) {
+    existingParticipant.connected = true;
+    existingParticipant.lastSeenAt = timestamp;
+    session.updatedAt = timestamp;
+    return copySession(session);
+  }
+
+  if (session.participants.length >= 2) {
+    throw new SessionError("ROOM_FULL", "Room is full");
+  }
+
+  if (session.participants.some((participant) => participant.side === expectedSide)) {
+    throw new SessionError("INVALID_ACTION", "Match side is already occupied");
+  }
+
+  session.participants.push({
+    userId,
+    side: expectedSide,
+    connected: true,
+    joinedAt: timestamp,
+    lastSeenAt: timestamp,
+  });
+
+  const hasHomeParticipant = session.participants.some((participant) => participant.side === "home");
+  const hasAwayParticipant = session.participants.some((participant) => participant.side === "away");
+  if (hasHomeParticipant && hasAwayParticipant) {
+    session.status = "active";
+    if (session.phase === "lobby") {
+      session.phase = "first_half";
+    }
+    session.activeSide = "home";
+  }
+
+  session.updatedAt = timestamp;
   return copySession(session);
 }
 
