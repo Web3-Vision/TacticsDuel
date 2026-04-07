@@ -367,6 +367,11 @@ export default function SquadHubPage() {
                 <p className="font-mono text-xs text-text-mid mt-1">
                   Fill weak chemistry links and replace listed players in one tap.
                 </p>
+                {marketError && (
+                  <p className="mt-1 font-mono text-[10px] text-gold">
+                    Market listings are unavailable right now. Squad saving still works.
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Link
@@ -579,7 +584,6 @@ export default function SquadHubPage() {
               {mutation.status === "saving" && <span className="font-mono text-[10px] text-text-dim">Saving...</span>}
               {mutation.status === "saved" && <span className="font-mono text-[10px] text-accent">Saved</span>}
               {mutation.status === "error" && <span className="font-mono text-[10px] text-danger">{mutation.message}</span>}
-              {marketError && <span className="font-mono text-[10px] text-danger">{marketError}</span>}
             </div>
             <button
               onClick={() => {

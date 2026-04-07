@@ -94,10 +94,8 @@ export const useSquadStore = create<SquadState>((set, get) => ({
   loadSquad: (formationId, slots) => set({ formationId, slots }),
 
   saveToSupabase: async () => {
-    const { createClient } = await import("../supabase/client");
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Not authenticated");
+    const { ensureSquadEditable } = await import("../squad/ensure-squad-editable");
+    const { supabase, user } = await ensureSquadEditable();
 
     const state = get();
     const playerIds = state.slots.map((p) => p?.id ?? null);
