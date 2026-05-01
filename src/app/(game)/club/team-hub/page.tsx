@@ -2,8 +2,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getFormation } from "@/lib/data/formations";
 import { getPlayerById } from "@/lib/data/players";
+import { countSavedStarters } from "@/lib/squad/persisted-squad";
 import { formatPrice } from "@/lib/utils";
 import { Lock, Unlock, ArrowRight } from "lucide-react";
+import LockSquadPanel from "./lock-squad-panel";
 
 interface SquadRow {
   formation: string;
@@ -28,7 +30,7 @@ export default async function TeamHubPage() {
     );
   }
 
-  const [{ data: profile }, { data: squad }, { count: openListingCount }] = await Promise.all([
+  const [{ data: profile }, { data: squad }, { data: tactics }, { count: openListingCount }] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, coins, transfers_remaining, ranked_matches_in_cycle, squad_locked")
@@ -39,6 +41,11 @@ export default async function TeamHubPage() {
       .select("formation, player_ids, bench_ids, total_cost")
       .eq("user_id", user.id)
       .single(),
+    supabase
+      .from("tactics")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle(),
     supabase
       .from("transfer_listings")
       .select("id", { count: "exact", head: true })
@@ -58,6 +65,8 @@ export default async function TeamHubPage() {
   const bench = resolvedSquad.bench_ids.map((playerId) => (playerId ? getPlayerById(playerId) : null));
   const filledStarters = starters.filter(Boolean).length;
   const filledBench = bench.filter(Boolean).length;
+  const savedStarterCount = countSavedStarters(squad);
+  const hasTactics = Boolean(tactics?.user_id);
 
   return (
     <div className="flex flex-col gap-3 p-3 pb-20 md:p-4 md:pb-24">
@@ -104,6 +113,13 @@ export default async function TeamHubPage() {
               : "Squad is unlocked. You can keep editing before entering ranked."}
           </p>
         </div>
+
+        <LockSquadPanel
+          squadLocked={Boolean(profile?.squad_locked)}
+          savedStarterCount={savedStarterCount}
+          hasTactics={hasTactics}
+          rankedMatchesInCycle={profile?.ranked_matches_in_cycle ?? 0}
+        />
       </section>
 
       <section className="glass-panel panel-enter rounded-xl p-3">

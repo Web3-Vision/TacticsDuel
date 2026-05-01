@@ -9,6 +9,8 @@ import {
   BEARD_STYLES,
   type AccountStatus,
 } from "@/lib/profile-options";
+import { countSavedStarters } from "../../../lib/squad/persisted-squad";
+import { getSquadLockTransitionError } from "../../../lib/squad/squad-lock";
 
 function parseMissingColumnFromError(error: { code?: string; message?: string } | null) {
   if (!error || error.code !== "PGRST204") return null;
@@ -58,11 +60,34 @@ export async function PATCH(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userId = user.id;
 
   const body = await request.json();
   const updates: Record<string, unknown> = {};
   const requestedManagerName =
     typeof body.manager_name === "string" ? body.manager_name.trim() : null;
+  let currentProfile:
+    | {
+        account_status?: AccountStatus | null;
+        squad_locked?: boolean | null;
+        ranked_matches_in_cycle?: number | null;
+      }
+    | null
+    | undefined;
+
+  async function loadCurrentProfile() {
+    if (currentProfile !== undefined) {
+      return currentProfile;
+    }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("account_status, squad_locked, ranked_matches_in_cycle")
+      .eq("id", userId)
+      .maybeSingle();
+    currentProfile = data;
+    return currentProfile;
+  }
 
   if (body.favorite_team !== undefined) {
     updates.favorite_team =
@@ -144,13 +169,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     const nextStatus = body.account_status as AccountStatus;
-    const { data: currentProfile } = await supabase
-      .from("profiles")
-      .select("account_status")
-      .eq("id", user.id)
-      .single();
+    const profile = await loadCurrentProfile();
 
-    if (currentProfile?.account_status === "deactivated" && nextStatus !== "deactivated") {
+    if (profile?.account_status === "deactivated" && nextStatus !== "deactivated") {
       return NextResponse.json(
         { error: "Deactivated accounts cannot be reactivated from this endpoint" },
         { status: 400 }
@@ -172,6 +193,56 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  if (body.squad_locked !== undefined) {
+    if (typeof body.squad_locked !== "boolean") {
+      return NextResponse.json({ error: "Squad lock must be true or false" }, { status: 400 });
+    }
+
+    const profile = await loadCurrentProfile();
+    const nextLocked = body.squad_locked;
+    const currentlyLocked = Boolean(profile?.squad_locked);
+
+    if (nextLocked !== currentlyLocked) {
+      const [{ data: squad }, { data: tactics }] = await Promise.all([
+        supabase
+          .from("squads")
+          .select("player_ids")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("tactics")
+          .select("user_id")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+
+      const transitionError = getSquadLockTransitionError(
+        {
+          savedStarterCount: countSavedStarters(squad),
+          hasTactics: Boolean(tactics?.user_id),
+          squadLocked: currentlyLocked,
+          rankedMatchesInCycle: profile?.ranked_matches_in_cycle ?? 0,
+        },
+        nextLocked,
+      );
+
+      if (transitionError) {
+        return NextResponse.json(
+          { error: transitionError },
+          { status: nextLocked ? 400 : 409 },
+        );
+      }
+    }
+
+    updates.squad_locked = nextLocked;
+    if (nextLocked && !currentlyLocked) {
+      updates.squad_confirmed_at = new Date().toISOString();
+    }
+    if (!nextLocked && currentlyLocked) {
+      updates.squad_confirmed_at = null;
+    }
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
@@ -182,7 +253,7 @@ export async function PATCH(request: NextRequest) {
     const { data: updatedProfile, error } = await supabase
       .from("profiles")
       .update(fallbackUpdates)
-      .eq("id", user.id)
+      .eq("id", userId)
       .select("id")
       .maybeSingle();
 

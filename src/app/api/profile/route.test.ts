@@ -84,4 +84,88 @@ describe("/api/profile route", () => {
       { onConflict: "id" },
     );
   });
+
+  it("rejects squad lock when tactics have not been saved", async () => {
+    createClientMock.mockResolvedValue({
+      auth: {
+        getUser: async () => ({
+          data: {
+            user: {
+              id: "user-1",
+              email: "manager@example.com",
+              user_metadata: {},
+            },
+          },
+        }),
+      },
+      from: vi.fn((table: string) => {
+        if (table === "profiles") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    account_status: "active",
+                    squad_locked: false,
+                    ranked_matches_in_cycle: 0,
+                  },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        if (table === "squads") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { player_ids: Array(11).fill("starter") },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        if (table === "tactics") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    });
+
+    createServiceClientMock.mockResolvedValue({
+      from: vi.fn(),
+    });
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(
+      new Request("http://localhost/api/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          squad_locked: true,
+        }),
+      }) as never,
+    );
+
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ error: "Save your tactics before locking the squad." });
+  });
 });

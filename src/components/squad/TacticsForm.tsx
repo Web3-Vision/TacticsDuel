@@ -118,10 +118,21 @@ export default function TacticsForm({ showFormation = true, stickyButton = true 
 
   async function handleSave() {
     setSaveError("");
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { ensureSquadEditable } = await import("@/lib/squad/ensure-squad-editable");
+    const editable = await (async () => {
+      try {
+        return await ensureSquadEditable();
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : "Failed to save tactics");
+        return null;
+      }
+    })();
+
+    if (!editable) {
+      return;
+    }
+
+    const { supabase, user } = editable;
 
     const { error } = await supabase.from("tactics").upsert({
       user_id: user.id,
